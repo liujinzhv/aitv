@@ -200,3 +200,7 @@ app/src/tvapp/AndroidManifest.xml 去掉 HOME 类别的 tvapp 变体
 - 下载交给系统 DownloadManager，落到公共 `Download` 目录；部分高版本设备的下载中心不显示已入队任务。
 - 网易云歌词接口为非官方接口，可能失效，失败会回退 LRCLIB 与本地 LRC。
 - 未集成字幕在线下载、媒体库分卷 / 合集自动归类、海报手动更换。
+
+## 许可证
+
+MIT，见仓库根目录 `LICENSE`。题库素材另有来源许可，见上文「智慧锁屏与家长管控」。
