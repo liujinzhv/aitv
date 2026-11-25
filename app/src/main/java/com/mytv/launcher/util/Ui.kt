@@ -1,0 +1,119 @@
+package com.mytv.launcher.util
+
+import android.app.Activity
+import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.graphics.drawable.LayerDrawable
+import android.view.View
+import android.view.WindowManager
+import android.widget.Toast
+import java.util.Locale
+import kotlin.math.abs
+
+fun Context.dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+fun View.focusScale(scale: Float = 1.05f, elevationDp: Float = 10f) {
+    setOnFocusChangeListener { v, hasFocus ->
+        v.animate()
+            .scaleX(if (hasFocus) scale else 1f)
+            .scaleY(if (hasFocus) scale else 1f)
+            .setDuration(160)
+            .start()
+        v.elevation = if (hasFocus) v.context.dp(elevationDp).toFloat() else 0f
+    }
+}
+
+/** 透明玻璃卡片背景，透出桌面壁纸，带焦点描边 */
+fun featureCardBackground(context: Context, color1: Int, color2: Int): Drawable {
+    val radius = context.dp(18f).toFloat()
+
+    fun normal(): Drawable {
+        val base = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(0x26070B11)
+            setStroke(context.dp(1f), 0x2BFFFFFF)
+        }
+        val tint = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(alpha(color1, 0x70), alpha(color2, 0x30))
+        ).apply { cornerRadius = radius }
+        return LayerDrawable(arrayOf(base, tint))
+    }
+
+    fun focused(): Drawable {
+        val base = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(0x400B1119)
+        }
+        val tint = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(alpha(color1, 0xB4), alpha(color2, 0x58))
+        ).apply { cornerRadius = radius }
+        return LayerDrawable(arrayOf(base, tint))
+    }
+
+    return StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_focused), focused())
+        addState(intArrayOf(android.R.attr.state_pressed), focused())
+        addState(intArrayOf(), normal())
+    }
+}
+
+private fun alpha(color: Int, value: Int): Int = Color.argb(
+    value.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color)
+)
+
+fun Activity.toast(msg: String) {
+    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
+
+fun Activity.immersive() {
+    @Suppress("DEPRECATION")
+    window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        )
+}
+
+fun Activity.keepScreenOn() {
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+}
+
+fun formatDuration(ms: Long): String {
+    if (ms <= 0 || ms == Long.MIN_VALUE) return "--:--"
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+    else String.format(Locale.US, "%02d:%02d", m, s)
+}
+
+fun formatSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val kb = bytes / 1024.0
+    val mb = kb / 1024.0
+    val gb = mb / 1024.0
+    return when {
+        gb >= 1 -> String.format(Locale.US, "%.1f GB", gb)
+        mb >= 1 -> String.format(Locale.US, "%.0f MB", mb)
+        else -> String.format(Locale.US, "%.0f KB", kb)
+    }
+}
+
+/** 由标题生成稳定的暗色，用作没有海报时的占位底色 */
+fun colorFromKey(key: String): Int {
+    val hash = abs(key.hashCode())
+    val hue = (hash % 360).toFloat()
+    return Color.HSVToColor(floatArrayOf(hue, 0.38f, 0.34f))
+}
+
+fun CharSequence.isNotBlankStr(): Boolean = this.toString().isNotBlank()
+

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black">
+
+    <com.mytv.launcher.ui.ZoomImageView
+        android:id="@+id/zoomImage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/photoName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="22dp"
+        android:background="@drawable/bg_pill"
+        android:paddingStart="18dp"
+        android:paddingTop="7dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="7dp"
+        android:text=""
+        android:textColor="@color/text_dim"
+        android:textSize="13sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="28dp"
+        android:gravity="end"
+        android:maxLines="2"
+        android:text="返回退出 · OK 放大 · 方向键平移\n长按 OK 或菜单键设为桌面背景"
+        android:textColor="@color/text_faint"
+        android:textSize="12sp" />
+</FrameLayout>

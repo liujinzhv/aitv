@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- TCL 电视会拒绝安装声明了 HOME 的第三方桌面 APK，
+         报错 INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES:
+         disable install launcher app not signature by tcl。
+         TV 版用 replace 重建入口，只保留普通应用/电视应用列表，
+         改由开机广播直接拉起 MyTV；手机版仍保留桌面能力。 -->
+    <application>
+        <activity
+            android:name="com.mytv.launcher.ui.MainActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:stateNotNeeded="true"
+            tools:node="replace">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

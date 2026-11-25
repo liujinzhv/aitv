@@ -1,0 +1,71 @@
+# ---------- Gradle / 构建产物 ----------
+.gradle/
+.gradle-cache/
+build/
+app/build/
+*.hprof
+captures/
+
+# Kotlin 增量编译缓存
+.kotlin/
+kotlin-js-store/
+
+# ---------- 本地环境配置 ----------
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# ---------- IDE ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+out/
+
+# ---------- Android 产物 ----------
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+output-metadata.json
+.cxx/
+.externalNativeBuild/
+
+# ---------- 日志与临时文件 ----------
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+build-*.log
+copy-ok.txt
+dump_guard*.py
+emu-prefs*.xml
+lockstate-test.xml
+
+# ---------- 文档素材：截图 / 演示媒体 / 数据集 / 设备备份 ----------
+# 保留 README 引用的几张预览图，其余本地素材不入库
+docs/screenshots/*
+!docs/screenshots/tv-home-1.2.png
+!docs/screenshots/tv-live-wall-final.png
+!docs/screenshots/tv-video-1.2.png
+!docs/screenshots/tv-live-play-1.2.png
+docs/bank_tmp/
+docs/demo_assets/
+docs/tv-prefs*.xml
+
+# 调试过程中的临时笔记（非项目文档）
+boot-autostart-fix.md
+
+# ---------- 系统文件 ----------
+Thumbs.db
+desktop.ini
+.DS_Store
