@@ -62,6 +62,10 @@ docs/bank_tmp/
 docs/demo_assets/
 docs/tv-prefs*.xml
 
+# 直播源配置（含第三方订阅地址，不入库）
+*.m3u
+*.m3u8
+
 # 调试过程中的临时笔记（非项目文档）
 boot-autostart-fix.md
 
