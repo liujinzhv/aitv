@@ -4,7 +4,7 @@
 
 > 布局参考 [pengchujin/aerial-tv](https://github.com/pengchujin/aerial-tv) 的卡片式大屏风格：深色渐变、时钟 + 天气、单个功能卡行，背景支持视频或图片（默认内置「阖家团圆」图）。当前首页只有 6 张功能卡，**不再有「常用与收藏」网站/应用横排**。
 
-![TCL 电视实机桌面（1.2 版）](docs/screenshots/tv-home-1.2.png)
+![智慧家庭TV 首页](docs/screenshots/tv-home-1.3.png)
 
 ## 功能一览
 
