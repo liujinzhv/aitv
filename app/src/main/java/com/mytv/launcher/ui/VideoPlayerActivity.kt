@@ -41,6 +41,7 @@ class VideoPlayerActivity : Activity() {
     private var streamUrl: String? = null
     private var localFile: File? = null
     private var isLiveMode = false
+    private var controllerKeySwallowed = false
     private var isVodClip = false
     private lateinit var httpClient: okhttp3.OkHttpClient
     private lateinit var dataSourceFactory: OkHttpDataSource.Factory
@@ -57,6 +58,10 @@ class VideoPlayerActivity : Activity() {
     private var handedToSystemPlayer = false
     private val handler = Handler(Looper.getMainLooper())
     private val retryRunnable = Runnable { startPlayback() }
+    /** 缓冲提示延迟弹出，避免直播源轻微抖动时提示一闪一闪 */
+    private val loadingShowRunnable = Runnable {
+        showLoading(if (readyAt > 0) "正在缓冲…" else "正在加载…")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,8 +109,10 @@ class VideoPlayerActivity : Activity() {
             .build()
         player = exo
         binding.playerView.player = exo
-        binding.playerView.controllerShowTimeoutMs = 4000
-        binding.playerView.setControllerAutoShow(true)
+        binding.playerView.controllerShowTimeoutMs = CONTROLLER_TIMEOUT_MS
+        // 开始播放时不自动弹出操作按钮：本地视频要用户按键才出，直播整场都不出
+        binding.playerView.setControllerAutoShow(false)
+        binding.playerView.useController = !isLiveMode
         exo.addListener(playerListener)
     }
 
@@ -145,10 +152,11 @@ class VideoPlayerActivity : Activity() {
             return
         }
         if (retryCount >= MAX_RETRY) {
-            showStatus("直播源无法连接（${error.errorCodeName}）\n已重试 $MAX_RETRY 次，按返回键换台")
+            // 不再弹整屏「连接中断」界面，只在画面下方留一行提示
+            showLoading("直播源连接失败，按返回键换台")
             return
         }
-        scheduleRetry("直播连接中断")
+        scheduleRetry()
     }
 
     private fun handlePlaybackState(playbackState: Int) {
@@ -156,8 +164,14 @@ class VideoPlayerActivity : Activity() {
         when (playbackState) {
             Player.STATE_READY -> {
                 binding.errorText.visibility = View.GONE
+                handler.removeCallbacks(loadingShowRunnable)
                 hideLoading()
                 readyAt = SystemClock.elapsedRealtime()
+                if (!isLiveMode && binding.playerView.controllerShowTimeoutMs == 0) {
+                    // 从「播完」状态重新播放：回到默认隐藏、超时自动收起的表现
+                    binding.playerView.controllerShowTimeoutMs = CONTROLLER_TIMEOUT_MS
+                    binding.playerView.hideController()
+                }
                 // 直播源里常混入有限时长的 HLS 点播片段，播完不要按直播反复重连
                 if (isLiveMode && !isVodClip && !exo.isCurrentMediaItemLive) {
                     isVodClip = true
@@ -166,22 +180,30 @@ class VideoPlayerActivity : Activity() {
 
             Player.STATE_BUFFERING -> {
                 if (!webMode) {
-                    showLoading(if (readyAt > 0) "正在缓冲…" else "正在加载…")
+                    handler.removeCallbacks(loadingShowRunnable)
+                    // 已经在播（readyAt>0）时多等一会儿，缓冲能自己恢复就不必提示
+                    handler.postDelayed(loadingShowRunnable, if (readyAt > 0) 1500L else 400L)
                 }
             }
 
             Player.STATE_ENDED -> {
+                handler.removeCallbacks(loadingShowRunnable)
                 hideLoading()
-                if (!isLiveMode) return
+                if (!isLiveMode) {
+                    // 本地视频播完才把进度条和按钮露出来，方便重播或退出
+                    binding.playerView.controllerShowTimeoutMs = 0
+                    binding.playerView.showController()
+                    return
+                }
                 if (isVodClip) {
                     showStatus("点播视频已播放结束\n按返回键换一个频道")
                     return
                 }
                 if (retryCount >= MAX_RETRY) {
-                    showStatus("直播已断开，重连失败\n按返回键换一个频道")
+                    showLoading("直播已断开，按返回键换一个频道")
                     return
                 }
-                scheduleRetry("直播已断开")
+                scheduleRetry()
             }
         }
     }
@@ -256,6 +278,7 @@ class VideoPlayerActivity : Activity() {
         }
         exo.prepare()
         exo.playWhenReady = true
+        binding.playerView.hideController()
     }
 
     private fun isFlvStream(): Boolean {
@@ -362,11 +385,13 @@ class VideoPlayerActivity : Activity() {
         web.loadUrl(url)
     }
 
-    private fun scheduleRetry(prefix: String) {
+    private fun scheduleRetry() {
         resetRetryIfPlayedLongEnough()
         readyAt = 0L
         retryCount++
-        showStatus("$prefix，正在重连（$retryCount/$MAX_RETRY）")
+        // 重连不弹整屏提示，只用一行小字，避免打断正在看的人
+        binding.errorText.visibility = View.GONE
+        showLoading("正在重连…")
         handler.removeCallbacks(retryRunnable)
         handler.postDelayed(retryRunnable, RETRY_DELAY_MS)
     }
@@ -451,6 +476,18 @@ class VideoPlayerActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 本地视频：按钮默认隐藏，按任意播放相关键先把按钮叫出来，这一下不再触发别的动作
+        if (!isLiveMode && !webMode && event.keyCode in CONTROL_KEYS) {
+            if (event.action == KeyEvent.ACTION_DOWN && !binding.playerView.isControllerFullyVisible) {
+                binding.playerView.showController()
+                controllerKeySwallowed = true
+                return true
+            }
+            if (event.action == KeyEvent.ACTION_UP && controllerKeySwallowed) {
+                controllerKeySwallowed = false
+                return true
+            }
+        }
         if (event.action == KeyEvent.ACTION_UP && event.keyCode == KeyEvent.KEYCODE_MENU && localFile != null) {
             // 菜单键：本地视频随时可以改用电视自带的播放器打开
             handedToSystemPlayer = false
@@ -497,6 +534,21 @@ class VideoPlayerActivity : Activity() {
 
         private const val MAX_RETRY = 3
         private const val RETRY_DELAY_MS = 2500L
+        private const val CONTROLLER_TIMEOUT_MS = 3000
+
+        /** 能唤醒播放按钮的按键（遥控器 OK、左右快进快退、播放暂停等） */
+        private val CONTROL_KEYS = setOf(
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_REWIND
+        )
         private const val STABLE_PLAY_MS = 20_000L
         private const val BROWSER_UA =
             "Mozilla/5.0 (Linux; Android 8.0.0; SmartTV) AppleWebKit/537.36 " +
