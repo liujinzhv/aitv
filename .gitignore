@@ -60,6 +60,9 @@ docs/screenshots/*
 !docs/screenshots/tv-live-play-1.2.png
 docs/bank_tmp/
 docs/demo_assets/
+# 演示素材体积大，只保留在本地，不入库
+docs/demo_docs/
+docs/demo_video/
 docs/tv-prefs*.xml
 
 # 直播源配置（含第三方订阅地址，不入库）
