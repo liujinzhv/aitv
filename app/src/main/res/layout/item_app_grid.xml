@@ -17,7 +17,7 @@
         android:contentDescription="应用图标"
         android:scaleType="fitCenter" />
 
-    <com.mytv.launcher.util.GlowTextView
+    <com.aitv.launcher.util.GlowTextView
         android:id="@+id/appName"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

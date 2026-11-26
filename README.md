@@ -28,7 +28,7 @@
 - `compileSdk 34`，`minSdk 26`，`targetSdk 28`（使用 Android 8 的存储与后台行为）
 - 依赖：androidx.core、androidx.recyclerview、androidx.media3（exoplayer / hls / datasource-okhttp / ui）、androidx.exifinterface、OkHttp、NanoHTTPD
 - 无 AppCompat / Compose / Glide / Coil / 协程；图片加载、线程池、歌词解析均自带实现
-- ViewBinding + 平台 `Theme.Material.NoActionBar`；`applicationId = com.mytv.launcher`
+- ViewBinding + 平台 `Theme.Material.NoActionBar`；`applicationId = com.aitv.launcher`
 
 ## 构建
 
@@ -68,7 +68,7 @@ INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES: disable install launcher app not
 adb install -r app-tvapp.apk
 ```
 
-- 包名 `com.mytv.launcher.tvapp`，版本名 `1.3.3-tvapp`，显示名称仍是「智慧家庭TV」；
+- 包名 `com.aitv.launcher.tvapp`，版本名 `1.3.4-tvapp`，显示名称仍是「智慧家庭TV」；
 - 可从电视「全部应用」手动打开，功能完整（含锁屏与上传）；
 - 不能设为默认桌面，按 Home 仍回电视自带桌面；设置里的「开机进入 智慧家庭TV」会提示当前安装包没有桌面入口。
 
@@ -77,7 +77,7 @@ adb install -r app-tvapp.apk
 1. 打开应用，授予「存储」与「位置」权限（位置只用于天气城市）。
 2. 设为默认桌面：电视「设置 → 应用 → 默认应用 → 主屏幕」选择「智慧家庭TV」，或
    ```powershell
-   adb shell cmd package set-home-activity com.mytv.launcher/.ui.MainActivity
+   adb shell cmd package set-home-activity com.aitv.launcher/.ui.MainActivity
    ```
 3. 首页天气默认自动定位：先取系统最后已知位置并反查城市，失败再走 IP 定位；都失败回退手动城市「西安」，坐标可在设置里改。
 

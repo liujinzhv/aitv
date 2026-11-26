@@ -22,7 +22,7 @@
             android:contentDescription=""
             android:tint="@color/white" />
 
-        <com.mytv.launcher.util.GlowTextView
+        <com.aitv.launcher.util.GlowTextView
             android:id="@+id/cardTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

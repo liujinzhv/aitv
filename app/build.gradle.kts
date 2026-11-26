@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.mytv.launcher"
+    namespace = "com.aitv.launcher"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.mytv.launcher"
+        applicationId = "com.aitv.launcher"
         minSdk = 26
         targetSdk = 28
         versionCode = 8

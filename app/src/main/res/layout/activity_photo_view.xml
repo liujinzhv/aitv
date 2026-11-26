@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="@color/black">
 
-    <com.mytv.launcher.ui.ZoomImageView
+    <com.aitv.launcher.ui.ZoomImageView
         android:id="@+id/zoomImage"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

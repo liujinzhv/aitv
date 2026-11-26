@@ -9,7 +9,7 @@
          改由开机广播直接拉起 MyTV；手机版仍保留桌面能力。 -->
     <application>
         <activity
-            android:name="com.mytv.launcher.ui.MainActivity"
+            android:name="com.aitv.launcher.ui.MainActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
