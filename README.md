@@ -68,7 +68,7 @@ INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES: disable install launcher app not
 adb install -r app-tvapp.apk
 ```
 
-- 包名 `com.mytv.launcher.tvapp`，版本名 `1.3.0-tvapp`，显示名称仍是「智慧家庭TV」；
+- 包名 `com.mytv.launcher.tvapp`，版本名 `1.3.2-tvapp`，显示名称仍是「智慧家庭TV」；
 - 可从电视「全部应用」手动打开，功能完整（含锁屏与上传）；
 - 不能设为默认桌面，按 Home 仍回电视自带桌面；设置里的「开机进入 智慧家庭TV」会提示当前安装包没有桌面入口。
 
@@ -96,6 +96,8 @@ adb install -r app-tvapp.apk
 - 只扫本地视频，点击海报直接全屏播放，不再进详情页、不再询问播放器。
 - 字幕：同目录同名 `.srt` / `.ass` / `.ssa` / `.vtt` 自动挂载。
 - 解码：ExoPlayer 默认优先系统硬解（MediaCodec / Codec2），开启 `setEnableDecoderFallback(true)`，硬解失败自动回退软解。
+- 数据源：播放器统一用 `DefaultDataSource.Factory` 包一层再交给 `DefaultMediaSourceFactory`——本地 `file://` / `content://` 由 `FileDataSource` 读，`http(s)` 才走 OkHttp（保留 UA 与 Referer 伪装）。1.3.1 之前直接把 OkHttp 数据源塞给播放器，本地视频会报 `HttpDataSourceException: Malformed URL`，表现就是「点了没反应 / 播不了 mp4」。
+- 兜底：解码类错误（初始化解码器失败 / 输出缓冲失败 / 解码失败 / 格式不支持或超出能力）会先销毁播放器、关掉 MediaCodec 异步队列重建一次再续播；仍失败则把视频交给系统播放器（`ACTION_VIEW` + FileProvider），并提示「已交给系统播放器打开」。播放器页按菜单键也可手动切到系统播放器。
 - 说明：`VideoDetailActivity` 与 `VideoScraper.enrich`（NFO / TMDB 刮削）代码仍在，但影视库当前不再跳详情页，所以 **设置里的 TMDB Key 与「清除刮削缓存」不影响影视库展示**；海报来自同目录图片或视频抽帧。
 
 ### 音乐
@@ -103,8 +105,16 @@ adb install -r app-tvapp.apk
 - 自动扫描所有存储卷，也可在「设置 → 音乐目录」填 `;` 分隔的目录。
 - 歌单：顶部「我的歌单」列表，新建 / 长按重命名或删除；「全部歌曲」中长按歌曲加入歌单，歌单内长按可从歌单移除（不会删文件）。
 - 播放模式按钮在「顺序播放 / 随机播放」间切换，状态存 `play_mode`。
+- 退出播放页（返回桌面 / 按 Home / 熄屏）立即停止播放并撤掉前台通知，不在后台继续放歌；再次进入音乐页会停在退出时的进度，按 OK 继续。
 - 歌词顺序：同目录同名 `.lrc` 或 `lyrics/<同名>.lrc` → 已刮削缓存 `files/lyrics/<hash>.lrc` → 网易云音乐搜索接口 → LRCLIB；都失败时提示可手动放 `.lrc`。
 - 内嵌封面写到 `files/artwork/<md5>.img` 复用，列表与通知栏共用。
+
+### 遥控器焦点与选中效果
+
+- 焦点落在任何可操作控件上都会放大 + 抬起 + 白色描边；背景本身带焦点态的按钮、海报、列表项不会再叠一层框。
+- 列表（RecyclerView）本身不再抢焦点，焦点直接落在条目上；空列表也不会停在看不见反馈的空白处。
+- 「状态选中」用蓝色底 + 蓝框区分：当前歌曲 / 当前标签页 / 随机播放开关 / 已收藏网页 / 上次播放的频道，切换焦点后依然保留。
+- 统一实现在 `util/SelectionFx.kt`，由 `App` 在页面恢复时自动装饰，列表项由各自 adapter 调用。
 
 ### 相册 / 手机上传
 
@@ -167,7 +177,7 @@ app/src/main/java/com/mytv/launcher/
 ├── player/                    音乐 ExoPlayer 单例、前台服务、通知栏按钮
 ├── server/UploadServer.kt     NanoHTTPD 上传页与原始字节落盘
 ├── ui/                        桌面、直播、影视、播放器、相册、音乐、全部应用、浏览器、上传、设置、锁屏
-├── util/                      线程池、存储卷与扫描、通用 UI 工具
+├── util/                      线程池、存储卷与扫描、通用 UI 工具、焦点 / 选中效果（SelectionFx）
 ├── weather/                   Open-Meteo 天气、系统 / IP 定位
 └── web/                       收藏 JSON、thunder:// 解码与下载
 
@@ -183,10 +193,11 @@ app/src/tvapp/AndroidManifest.xml 去掉 HOME 类别的 tvapp 变体
 1. `assembleDebug` / `assembleTvapp` 均可产出 APK，安装后能设为默认桌面（或被 TCL 拒装时改用 tvapp）。
 2. 首页时钟、农历、天气（定位授权后）与 6 张卡正常；遥控器 D-pad 焦点移动顺畅。
 3. 直播：放入一个 m3u 后频道墙分组正确、台标缓存、点频道可播；断网重进仍显示缓存。
-4. 影视：U 盘里的视频被扫描到，点海报直接播放，同目录字幕能显示。
+4. 影视：U 盘里的视频被扫描到，点海报直接播放（mp4 / mkv 等本地文件都走本地数据源），同目录字幕能显示；播不了时按菜单键会切到系统播放器。
 5. 相册：EXIF 日期分组正确，全屏可缩放；手机上传页面可打开并上传成功。
 6. 音乐：歌单增删、顺序 / 随机切换、歌词高亮滚动、通知栏上一首 / 下一首可用。
 7. 锁屏：开启后闲置到点出题，答对回桌面，答错换题，家长密码可解锁；开启无障碍后按 Home 无法绕过。
+8. 退出音乐页（返回 / Home / 熄屏）后没有残留声音，通知栏播放卡片消失；所有按钮、标签、列表项焦点经过时都有放大 + 描边，状态选中项保持蓝底蓝框。
 
 ## 已知限制
 

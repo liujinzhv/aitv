@@ -6,7 +6,8 @@
     android:background="@drawable/bg_poster"
     android:clickable="true"
     android:clipToOutline="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:foreground="@drawable/fg_focus_ring">
 
     <ImageView
         android:id="@+id/poster"

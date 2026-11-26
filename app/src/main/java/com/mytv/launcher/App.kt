@@ -10,6 +10,7 @@ import com.mytv.launcher.lock.KioskController
 import com.mytv.launcher.lock.LockController
 import com.mytv.launcher.lock.LockState
 import com.mytv.launcher.ui.LockScreenActivity
+import com.mytv.launcher.util.SelectionFx
 
 class App : Application() {
 
@@ -37,6 +38,10 @@ class App : Application() {
 
             override fun onActivityResumed(activity: Activity) {
                 resumedActivity = activity
+                // 每个页面统一补上「选中 / 焦点」效果（放大 + 描边）
+                activity.window?.decorView?.post {
+                    runCatching { SelectionFx.decorate(activity.window.decorView) }
+                }
                 if (activity is LockScreenActivity) {
                     LockState.locked = true
                 } else if (LockState.locked) {

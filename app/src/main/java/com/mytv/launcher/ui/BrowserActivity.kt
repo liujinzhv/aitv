@@ -168,7 +168,9 @@ class BrowserActivity : Activity() {
 
     private fun updateBookmarkState() {
         val url = currentUrl()
-        binding.btnBookmark.text = if (BookmarkRepo.exists(url)) "已收藏" else "收藏"
+        val saved = BookmarkRepo.exists(url)
+        binding.btnBookmark.text = if (saved) "已收藏" else "收藏"
+        binding.btnBookmark.isSelected = saved
     }
 
     private fun requestDownload(raw: String) {

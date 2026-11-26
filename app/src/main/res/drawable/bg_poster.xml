@@ -7,6 +7,13 @@
             <stroke android:width="3dp" android:color="#FFFFFFFF" />
         </shape>
     </item>
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <solid android:color="#334EA1FF" />
+            <stroke android:width="2dp" android:color="#FF4EA1FF" />
+        </shape>
+    </item>
     <item>
         <shape android:shape="rectangle">
             <corners android:radius="14dp" />

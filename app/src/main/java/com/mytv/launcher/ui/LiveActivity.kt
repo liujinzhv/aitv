@@ -155,6 +155,8 @@ class LiveActivity : Activity() {
     }
 
     private fun play(channel: LiveChannel) {
+        adapter.activeUrl = channel.url
+        adapter.notifyDataSetChanged()
         startActivity(
             Intent(this, VideoPlayerActivity::class.java)
                 .putExtra(VideoPlayerActivity.EXTRA_URL, channel.url)
@@ -271,6 +273,9 @@ class LiveWallAdapter(
     private val accent = ColorStateList.valueOf(0xFF4EA1FF.toInt())
     private var favoriteUrls: Set<String> = emptySet()
 
+    /** 最近一次播放的频道，回到频道墙后保持选中效果 */
+    var activeUrl: String? = null
+
     fun submit(newRows: List<LiveWallRow>, favorites: Set<String>) {
         rows.clear()
         rows.addAll(newRows)
@@ -342,6 +347,7 @@ class LiveWallAdapter(
         fun bind(channel: LiveChannel) {
             itemView.isFocusable = true
             itemView.isFocusableInTouchMode = true
+            itemView.isSelected = channel.url == activeUrl
             name.text = channel.name
             val tag = channel.sourceTag()
             group.text = if (tag == null) channel.group else "${channel.group} · $tag"

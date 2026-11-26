@@ -1,6 +1,7 @@
 package com.mytv.launcher.ui
 
 import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -12,11 +13,14 @@ import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.content.FileProvider
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -40,6 +44,7 @@ class VideoPlayerActivity : Activity() {
     private var isVodClip = false
     private lateinit var httpClient: okhttp3.OkHttpClient
     private lateinit var dataSourceFactory: OkHttpDataSource.Factory
+    private lateinit var playbackSourceFactory: DataSource.Factory
     private var resolvedUrl: String? = null
     private var resolvedMime: String? = null
     private var resolveDone = false
@@ -48,6 +53,8 @@ class VideoPlayerActivity : Activity() {
 
     private var retryCount = 0
     private var readyAt = 0L
+    private var triedCompatDecode = false
+    private var handedToSystemPlayer = false
     private val handler = Handler(Looper.getMainLooper())
     private val retryRunnable = Runnable { startPlayback() }
 
@@ -80,79 +87,150 @@ class VideoPlayerActivity : Activity() {
             .build()
         dataSourceFactory = OkHttpDataSource.Factory(httpClient)
             .setUserAgent(BROWSER_UA)
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        // 本地 file:// / content:// 必须交给 DefaultDataSource，直连 OkHttp 会报 Malformed URL
+        playbackSourceFactory = DefaultDataSource.Factory(this, dataSourceFactory)
+        buildPlayer(compatDecode = false)
+        startPlayback()
+    }
 
-        // ExoPlayer 默认优先选择硬件解码器（GPU / MediaCodec），开启回退保证个别编码仍能播放
-        val renderers = DefaultRenderersFactory(this)
-            .setEnableDecoderFallback(true)
+    private fun buildPlayer(compatDecode: Boolean) {
+        // 默认优先硬件解码并开回退；兼容模式改用同步 MediaCodec，避开个别电视芯片的异步解码问题
+        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        if (compatDecode) {
+            renderers.forceDisableMediaCodecAsynchronousQueueing()
+        }
         val exo = ExoPlayer.Builder(this, renderers)
-            .setMediaSourceFactory(mediaSourceFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(playbackSourceFactory))
             .build()
         player = exo
         binding.playerView.player = exo
         binding.playerView.controllerShowTimeoutMs = 4000
         binding.playerView.setControllerAutoShow(true)
+        exo.addListener(playerListener)
+    }
 
-        exo.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                if (!isLiveMode) {
-                    showStatus("无法播放（${error.errorCodeName}）\n该格式可能不被内置播放器支持，可返回影视库换一个视频")
-                    return
+    private val playerListener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) = handlePlayerError(error)
+
+        override fun onPlaybackStateChanged(playbackState: Int) = handlePlaybackState(playbackState)
+    }
+
+    private fun handlePlayerError(error: PlaybackException) {
+        // 解码类错误：本地视频 / 点播 mp4 先用兼容解码重试一次
+        val canRetryCompat = isDecodeError(error) && !triedCompatDecode &&
+            (localFile != null || (isLiveMode && isVodClip))
+        if (canRetryCompat) {
+            triedCompatDecode = true
+            retryWithCompatDecode()
+            return
+        }
+        if (!isLiveMode) {
+            val file = localFile
+            if (file != null) {
+                handOffToSystemPlayer("内置解码器不支持这个视频（${error.errorCodeName}）")
+                return
+            }
+            showStatus("无法播放（${error.errorCodeName}）\n该格式可能不被内置播放器支持，可返回影视库换一个视频")
+            return
+        }
+        if (isVodClip) {
+            showStatus("点播视频播放失败（${error.errorCodeName}）\n按返回键换一个频道")
+            return
+        }
+        if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) {
+            showStatus(
+                if (isFlvStream()) "这个 FLV 的编码内置播放器不支持（需 H.264/AAC）\n按返回键换台"
+                else "直播源格式无法解析\n按返回键换台"
+            )
+            return
+        }
+        if (retryCount >= MAX_RETRY) {
+            showStatus("直播源无法连接（${error.errorCodeName}）\n已重试 $MAX_RETRY 次，按返回键换台")
+            return
+        }
+        scheduleRetry("直播连接中断")
+    }
+
+    private fun handlePlaybackState(playbackState: Int) {
+        val exo = player ?: return
+        when (playbackState) {
+            Player.STATE_READY -> {
+                binding.errorText.visibility = View.GONE
+                hideLoading()
+                readyAt = SystemClock.elapsedRealtime()
+                // 直播源里常混入有限时长的 HLS 点播片段，播完不要按直播反复重连
+                if (isLiveMode && !isVodClip && !exo.isCurrentMediaItemLive) {
+                    isVodClip = true
                 }
+            }
+
+            Player.STATE_BUFFERING -> {
+                if (!webMode) {
+                    showLoading(if (readyAt > 0) "正在缓冲…" else "正在加载…")
+                }
+            }
+
+            Player.STATE_ENDED -> {
+                hideLoading()
+                if (!isLiveMode) return
                 if (isVodClip) {
-                    showStatus("点播视频播放失败（${error.errorCodeName}）\n按返回键换一个频道")
-                    return
-                }
-                if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) {
-                    showStatus(
-                        if (isFlvStream()) "这个 FLV 的编码内置播放器不支持（需 H.264/AAC）\n按返回键换台"
-                        else "直播源格式无法解析\n按返回键换台"
-                    )
+                    showStatus("点播视频已播放结束\n按返回键换一个频道")
                     return
                 }
                 if (retryCount >= MAX_RETRY) {
-                    showStatus("直播源无法连接（${error.errorCodeName}）\n已重试 $MAX_RETRY 次，按返回键换台")
+                    showStatus("直播已断开，重连失败\n按返回键换一个频道")
                     return
                 }
-                scheduleRetry("直播连接中断")
+                scheduleRetry("直播已断开")
             }
+        }
+    }
 
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                when (playbackState) {
-                    Player.STATE_READY -> {
-                        binding.errorText.visibility = View.GONE
-                        hideLoading()
-                        readyAt = SystemClock.elapsedRealtime()
-                        // 直播源里常混入有限时长的 HLS 点播片段，播完不要按直播反复重连
-                        if (isLiveMode && !isVodClip && !exo.isCurrentMediaItemLive) {
-                            isVodClip = true
-                        }
-                    }
-
-                    Player.STATE_BUFFERING -> {
-                        if (!webMode) {
-                            showLoading(if (readyAt > 0) "正在缓冲…" else "正在加载…")
-                        }
-                    }
-
-                    Player.STATE_ENDED -> {
-                        hideLoading()
-                        if (!isLiveMode) return
-                        if (isVodClip) {
-                            showStatus("点播视频已播放结束\n按返回键换一个频道")
-                            return
-                        }
-                        if (retryCount >= MAX_RETRY) {
-                            showStatus("直播已断开，重连失败\n按返回键换一个频道")
-                            return
-                        }
-                        scheduleRetry("直播已断开")
-                    }
-                }
-            }
-        })
-
+    /** 解码失败时用同步 MediaCodec 重试一次，不少电视芯片的异步解码在个别编码上会直接失败 */
+    private fun retryWithCompatDecode() {
+        val pos = player?.currentPosition ?: 0L
+        showLoading("编码不兼容，正在用兼容解码重试…")
+        player?.release()
+        player = null
+        buildPlayer(compatDecode = true)
         startPlayback()
+        if (pos > 0) player?.seekTo(pos)
+    }
+
+    private fun isDecodeError(error: PlaybackException): Boolean = when (error.errorCode) {
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
+
+        else -> false
+    }
+
+    /** 内置 ExoPlayer 解不了时交给电视自带的播放器，能播的编码由系统播放器兜住 */
+    private fun handOffToSystemPlayer(reason: String) {
+        val file = localFile ?: return
+        if (handedToSystemPlayer) return
+        player?.pause()
+        val uri = runCatching {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        }.getOrNull()
+        if (uri == null) {
+            showStatus("$reason\n文件路径无法共享给系统播放器，可换一个视频")
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "video/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val launched = runCatching { startActivity(intent) }.isSuccess
+        if (!launched) {
+            showStatus("$reason\n本机没有可用的系统播放器，可换一个视频或换 H.264 / MKV 版本")
+            return
+        }
+        handedToSystemPlayer = true
+        showStatus("$reason\n已交给系统播放器打开，返回本页可换其他视频")
     }
 
     private fun startPlayback() {
@@ -169,7 +247,7 @@ class VideoPlayerActivity : Activity() {
         if (isFlvStream()) {
             // Media3 默认解析器不注册 FLV，必须显式挂 FlvExtractor
             val flvFactory = ProgressiveMediaSource.Factory(
-                dataSourceFactory,
+                playbackSourceFactory,
                 ExtractorsFactory { arrayOf(FlvExtractor()) }
             )
             exo.setMediaSource(flvFactory.createMediaSource(item))
@@ -373,6 +451,12 @@ class VideoPlayerActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_UP && event.keyCode == KeyEvent.KEYCODE_MENU && localFile != null) {
+            // 菜单键：本地视频随时可以改用电视自带的播放器打开
+            handedToSystemPlayer = false
+            handOffToSystemPlayer("按菜单键改用系统播放器")
+            return true
+        }
         if (event.action == KeyEvent.ACTION_UP &&
             (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_ESCAPE)
         ) {

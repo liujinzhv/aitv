@@ -355,9 +355,9 @@ class SettingsActivity : Activity() {
         ) {
             startActivity(android.content.Intent(this, BrowserActivity::class.java))
         }
-        addRow("关于 智慧家庭TV", "Android 8 TV 桌面 · 本地媒体中心", "版本 1.3.0") {
+        addRow("关于 智慧家庭TV", "Android 8 TV 桌面 · 本地媒体中心", "版本 1.3.1") {
             AlertDialog.Builder(this)
-                .setTitle("智慧家庭TV 1.3.0")
+                .setTitle("智慧家庭TV 1.3.1")
                 .setMessage(
                     "桌面：时钟 / 农历日期 / 按定位获取的天气 / 网站收藏 + 应用入口\n" +
                         "智慧锁屏：开关、自动锁屏时间、16 档难度、选择题 / 填空题、图片题 / 视频题、家长密码\n" +

@@ -311,7 +311,8 @@
                         android:id="@+id/lyricsList"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:clipToPadding="false" />
+                        android:clipToPadding="false"
+                        android:focusable="false" />
 
                     <TextView
                         android:id="@+id/lyricsHint"

@@ -161,8 +161,9 @@ object MusicPlayer {
     }
 
     fun stop(ctx: Context) {
-        player?.pause()
+        // 先停前台服务，避免 pause 回调又把通知拉起来
         MusicService.stop(ctx)
+        player?.pause()
         notifyChanged()
     }
 

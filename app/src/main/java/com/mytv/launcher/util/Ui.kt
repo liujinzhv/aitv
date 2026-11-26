@@ -15,15 +15,9 @@ import kotlin.math.abs
 
 fun Context.dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
+/** 焦点被选中：放大 + 抬起 + 描边，统一走 SelectionFx */
 fun View.focusScale(scale: Float = 1.05f, elevationDp: Float = 10f) {
-    setOnFocusChangeListener { v, hasFocus ->
-        v.animate()
-            .scaleX(if (hasFocus) scale else 1f)
-            .scaleY(if (hasFocus) scale else 1f)
-            .setDuration(160)
-            .start()
-        v.elevation = if (hasFocus) v.context.dp(elevationDp).toFloat() else 0f
-    }
+    SelectionFx.applyFocus(this, scale, elevationDp)
 }
 
 /** 透明玻璃卡片背景，透出桌面壁纸，带焦点描边 */

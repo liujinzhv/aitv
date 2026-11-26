@@ -26,6 +26,7 @@ import com.mytv.launcher.media.PlaylistRepo
 import com.mytv.launcher.model.AudioTrack
 import com.mytv.launcher.model.Playlist
 import com.mytv.launcher.player.MusicPlayer
+import com.mytv.launcher.player.MusicService
 import com.mytv.launcher.util.Async
 import com.mytv.launcher.util.dp
 import com.mytv.launcher.util.focusScale
@@ -176,6 +177,14 @@ class MusicActivity : Activity() {
         handler.removeCallbacks(tickRunnable)
     }
 
+    override fun onStop() {
+        super.onStop()
+        // 离开播放页（返回桌面 / Home / 熄屏）立刻停止播放，不在后台继续
+        if (MusicService.running || MusicPlayer.isPlaying) {
+            MusicPlayer.stop(this)
+        }
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
@@ -226,10 +235,14 @@ class MusicActivity : Activity() {
     }
 
     private fun updateModeLabel() {
-        binding.playModeBtn.text = if (MusicPlayer.shuffleEnabled) "随机播放" else "顺序播放"
+        val shuffle = MusicPlayer.shuffleEnabled
+        binding.playModeBtn.text = if (shuffle) "随机播放" else "顺序播放"
+        binding.playModeBtn.isSelected = shuffle
     }
 
     private fun setTabs(active: Int) {
+        binding.tabSongs.isSelected = active == 0
+        binding.tabPlaylists.isSelected = active == 1
         binding.tabSongs.setTextColor(
             ContextCompat.getColor(this, if (active == 0) R.color.white else R.color.text_dim)
         )
@@ -583,6 +596,7 @@ class TrackAdapter(
         holder.artist.text = item.artist
         holder.duration.text = formatDuration(item.durationMs)
         val active = item.path == activePath
+        holder.itemView.isSelected = active
         val accent = ContextCompat.getColor(holder.itemView.context, R.color.accent)
         val normal = ContextCompat.getColor(holder.itemView.context, R.color.text)
         holder.title.setTextColor(if (active) accent else normal)
@@ -601,6 +615,8 @@ class PlaylistAdapter(
     private val onLongClick: (Playlist) -> Unit
 ) : RecyclerView.Adapter<PlaylistAdapter.VH>() {
 
+    var activeName: String? = null
+
     class VH(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.trackTitle)
         val artist: TextView = view.findViewById(R.id.trackArtist)
@@ -618,6 +634,7 @@ class PlaylistAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val item = items[position]
+        holder.itemView.isSelected = item.name == activeName
         holder.title.text = item.name
         holder.artist.text = if (item.paths.isEmpty()) "空歌单 · 长按歌曲加入" else "长按歌曲可继续添加"
         holder.duration.text = "${item.paths.size} 首"
