@@ -47,9 +47,19 @@ object SelectionFx {
                 .setDuration(160)
                 .start()
             v.elevation = if (hasFocus) v.context.dp(elevationDp).toFloat() else 0f
+            v.isActivated = hasFocus
+            setGlow(v, hasFocus)
         }
         if (!hasOwnFocusState(view.background)) {
             view.background = focusStateDrawable(view.context, view.background)
+        }
+    }
+
+    /** 焦点变化时把发光开关下发给卡片里的 GlowTextView（焦点在卡片容器上，文字本身不聚焦） */
+    private fun setGlow(view: View, on: Boolean) {
+        when (view) {
+            is GlowTextView -> view.setGlow(on)
+            is ViewGroup -> for (i in 0 until view.childCount) setGlow(view.getChildAt(i), on)
         }
     }
 

@@ -20,34 +20,41 @@ fun View.focusScale(scale: Float = 1.05f, elevationDp: Float = 10f) {
     SelectionFx.applyFocus(this, scale, elevationDp)
 }
 
-/** 透明玻璃卡片背景，透出桌面壁纸，带焦点描边 */
+/** 透明玻璃卡片背景，透出桌面壁纸，带焦点描边（描边画最上层，避免被渐变色盖住） */
 fun featureCardBackground(context: Context, color1: Int, color2: Int): Drawable {
     val radius = context.dp(18f).toFloat()
 
-    fun normal(): Drawable {
-        val base = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(0x26070B11)
-            setStroke(context.dp(1f), 0x2BFFFFFF)
-        }
-        val tint = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(alpha(color1, 0x70), alpha(color2, 0x30))
-        ).apply { cornerRadius = radius }
-        return LayerDrawable(arrayOf(base, tint))
+    fun fill(color: Int): Drawable = GradientDrawable().apply {
+        cornerRadius = radius
+        setColor(color)
     }
 
-    fun focused(): Drawable {
-        val base = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(0x400B1119)
-        }
-        val tint = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(alpha(color1, 0xB4), alpha(color2, 0x58))
-        ).apply { cornerRadius = radius }
-        return LayerDrawable(arrayOf(base, tint))
+    fun tint(a: Int, b: Int): Drawable = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(alpha(color1, a), alpha(color2, b))
+    ).apply { cornerRadius = radius }
+
+    fun border(widthDp: Float, color: Int): Drawable = GradientDrawable().apply {
+        cornerRadius = radius
+        setColor(Color.TRANSPARENT)
+        setStroke(context.dp(widthDp), color)
     }
+
+    fun normal(): Drawable = LayerDrawable(
+        arrayOf(
+            fill(0x26070B11),
+            tint(0x70, 0x30),
+            border(1f, 0x2BFFFFFF)
+        )
+    )
+
+    fun focused(): Drawable = LayerDrawable(
+        arrayOf(
+            fill(0x440B1119),
+            tint(0xC8, 0x66),
+            border(1f, 0x73FFFFFF)
+        )
+    )
 
     return StateListDrawable().apply {
         addState(intArrayOf(android.R.attr.state_focused), focused())

@@ -45,7 +45,7 @@
         android:paddingEnd="14dp"
         android:paddingBottom="13dp">
 
-        <TextView
+        <com.mytv.launcher.util.GlowTextView
             android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

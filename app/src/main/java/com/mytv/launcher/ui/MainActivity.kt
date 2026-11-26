@@ -13,7 +13,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -45,7 +44,6 @@ class MainActivity : Activity() {
 
     private var wallPlayer: ExoPlayer? = null
     private var wallVideoPath: String? = null
-    private var liveSubtitle: TextView? = null
     private var weatherFreshAt: Long = 0L
 
     private val clockTick = object : Runnable {
@@ -77,7 +75,6 @@ class MainActivity : Activity() {
         super.onResume()
         handler.removeCallbacks(clockTick)
         handler.post(clockTick)
-        refreshLiveCard()
         updateWeather(force = false)
         setupWallpaper()
         wallPlayer?.play()
@@ -97,7 +94,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        refreshLiveCard()
+        updateWeather(force = false)
     }
 
     @Deprecated("Launcher 不响应返回键")
@@ -244,45 +241,38 @@ class MainActivity : Activity() {
     private fun buildFeatureCards() {
         binding.featureRow.removeAllViews()
 
-        liveSubtitle = addCard(
-            "电视直播", LiveRepo.subtitle(), R.drawable.ic_tv,
-            0xFF7A1F2B.toInt(), 0xFFD1465A.toInt()
-        ) { startActivity(Intent(this, LiveActivity::class.java)) }
+        addCard("直播", R.drawable.ic_tv, 0xFF7A1F2B.toInt(), 0xFFD1465A.toInt()) {
+            startActivity(Intent(this, LiveActivity::class.java))
+        }
 
-        addCard(
-            "影视", "仅本地视频 · 点击即播", R.drawable.ic_video,
-            0xFF123C66.toInt(), 0xFF2D7BD6.toInt()
-        ) { startActivity(Intent(this, VideoActivity::class.java)) }
+        addCard("视频", R.drawable.ic_video, 0xFF123C66.toInt(), 0xFF2D7BD6.toInt()) {
+            startActivity(Intent(this, VideoActivity::class.java))
+        }
 
-        addCard(
-            "相册", "U 盘照片 · 手机直传", R.drawable.ic_photo,
-            0xFF7A3A16.toInt(), 0xFFD9803A.toInt()
-        ) { startActivity(Intent(this, GalleryActivity::class.java)) }
+        addCard("相册", R.drawable.ic_photo, 0xFF7A3A16.toInt(), 0xFFD9803A.toInt()) {
+            startActivity(Intent(this, GalleryActivity::class.java))
+        }
 
-        addCard(
-            "音乐", "本地音乐 · 歌词自动刮削", R.drawable.ic_music,
-            0xFF4A2E86.toInt(), 0xFF8B5CF6.toInt()
-        ) { startActivity(Intent(this, MusicActivity::class.java)) }
+        addCard("音乐", R.drawable.ic_music, 0xFF4A2E86.toInt(), 0xFF8B5CF6.toInt()) {
+            startActivity(Intent(this, MusicActivity::class.java))
+        }
 
-        addCard(
-            "全部应用", "查看所有已安装应用", R.drawable.ic_apps,
-            0xFF12524C.toInt(), 0xFF2AA79B.toInt()
-        ) { startActivity(Intent(this, AllAppsActivity::class.java)) }
+        addCard("应用", R.drawable.ic_apps, 0xFF12524C.toInt(), 0xFF2AA79B.toInt()) {
+            startActivity(Intent(this, AllAppsActivity::class.java))
+        }
 
-        addCard(
-            "设置", "刮削源 · 目录 · 壁纸", R.drawable.ic_settings,
-            0xFF2A3038.toInt(), 0xFF556171.toInt()
-        ) { startActivity(Intent(this, SettingsActivity::class.java)) }
+        addCard("设置", R.drawable.ic_settings, 0xFF2A3038.toInt(), 0xFF556171.toInt()) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
     }
 
     private fun addCard(
         title: String,
-        subtitle: String,
         iconRes: Int,
         color1: Int,
         color2: Int,
         onClick: () -> Unit
-    ): TextView {
+    ) {
         val view = layoutInflater.inflate(R.layout.view_feature_card, binding.featureRow, false)
         val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
             setMargins(dp(6f), 0, dp(6f), 0)
@@ -292,18 +282,12 @@ class MainActivity : Activity() {
         val card = ViewFeatureCardBinding.bind(view)
         card.cardIcon.setImageResource(iconRes)
         card.cardTitle.text = title
-        card.cardSubtitle.text = subtitle
 
         view.background = featureCardBackground(this, color1, color2)
         view.focusScale(1.06f)
         view.setOnClickListener { onClick() }
 
         binding.featureRow.addView(view)
-        return card.cardSubtitle
-    }
-
-    private fun refreshLiveCard() {
-        liveSubtitle?.text = LiveRepo.subtitle()
     }
 
     private fun updateWeather(force: Boolean) {
