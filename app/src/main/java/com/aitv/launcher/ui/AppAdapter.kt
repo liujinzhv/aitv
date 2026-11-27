@@ -1,5 +1,6 @@
 package com.aitv.launcher.ui
 
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,7 +14,8 @@ import com.aitv.launcher.util.focusScale
 class AppAdapter(
     private val layoutRes: Int,
     private val items: List<AppEntry>,
-    private val onClick: (AppEntry) -> Unit
+    private val onClick: (AppEntry) -> Unit,
+    private val onLongClick: (AppEntry) -> Unit
 ) : RecyclerView.Adapter<AppAdapter.VH>() {
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
@@ -35,5 +37,17 @@ class AppAdapter(
         holder.icon.setImageDrawable(item.icon)
         holder.itemView.contentDescription = item.label
         holder.itemView.setOnClickListener { onClick(item) }
+        holder.itemView.setOnLongClickListener {
+            onLongClick(item)
+            true
+        }
+        holder.itemView.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_MENU && event.action == KeyEvent.ACTION_UP) {
+                onLongClick(item)
+                true
+            } else {
+                false
+            }
+        }
     }
 }

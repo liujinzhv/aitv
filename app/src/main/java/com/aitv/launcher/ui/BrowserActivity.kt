@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import com.aitv.launcher.databinding.ActivityBrowserBinding
+import com.aitv.launcher.util.lightPageChrome
 import com.aitv.launcher.web.BookmarkRepo
 import com.aitv.launcher.web.DownloadHelper
 
@@ -29,6 +30,7 @@ class BrowserActivity : Activity() {
         super.onCreate(savedInstanceState)
         binding = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        lightPageChrome()
         setupWebView()
         setupBar()
         val initial = intent.getStringExtra(EXTRA_URL)?.trim().orEmpty()

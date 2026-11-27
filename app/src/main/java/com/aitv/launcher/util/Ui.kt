@@ -21,7 +21,12 @@ fun View.focusScale(scale: Float = 1.05f, elevationDp: Float = 10f) {
 }
 
 /** 透明玻璃卡片背景，透出桌面壁纸，带焦点描边（描边画最上层，避免被渐变色盖住） */
-fun featureCardBackground(context: Context, color1: Int, color2: Int): Drawable {
+fun featureCardBackground(
+    context: Context,
+    color1: Int,
+    color2: Int,
+    lightBackground: Boolean = false
+): Drawable {
     val radius = context.dp(18f).toFloat()
 
     fun fill(color: Int): Drawable = GradientDrawable().apply {
@@ -44,15 +49,18 @@ fun featureCardBackground(context: Context, color1: Int, color2: Int): Drawable 
         arrayOf(
             fill(0x26070B11),
             tint(0x70, 0x30),
-            border(1f, 0x2BFFFFFF)
+            border(1f, if (lightBackground) 0x3311151B else 0x2BFFFFFF)
         )
     )
 
     fun focused(): Drawable = LayerDrawable(
         arrayOf(
-            fill(0x440B1119),
+            fill(if (lightBackground) 0x22000000 else 0x440B1119),
             tint(0xC8, 0x66),
-            border(1f, 0x73FFFFFF)
+            border(
+                if (lightBackground) 1.5f else 1f,
+                if (lightBackground) 0xCC11151B.toInt() else 0x73FFFFFF
+            )
         )
     )
 
@@ -85,6 +93,28 @@ fun Activity.immersive() {
 
 fun Activity.keepScreenOn() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+}
+
+/** 浅色页面：导航栏透明并让奶白页面延伸到屏幕底部，避免底部出现黑条 */
+fun Activity.lightPageChrome() {
+    val cream = androidx.core.content.ContextCompat.getColor(this, com.aitv.launcher.R.color.cream_bg)
+    window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+    if (android.os.Build.VERSION.SDK_INT >= 29) {
+        window.isNavigationBarContrastEnforced = false
+    }
+    window.navigationBarColor = cream
+    window.statusBarColor = cream
+    window.decorView.setBackgroundColor(cream)
+    // 不隐藏导航栏：隐藏后系统会留一条黑色手势区，浅色页面看起来像断层。
+    // 保留布局延伸 + 浅色图标，让导航栏本身也显示奶白底。
+    @Suppress("DEPRECATION")
+    window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        )
 }
 
 fun formatDuration(ms: Long): String {

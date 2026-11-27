@@ -64,6 +64,7 @@ class VideoPlayerActivity : Activity() {
 
     private var retryCount = 0
     private var readyAt = 0L
+    private var resumePositionMs = 0L
     private var triedCompatDecode = false
     private var handedToSystemPlayer = false
     private val handler = Handler(Looper.getMainLooper())
@@ -127,9 +128,14 @@ class VideoPlayerActivity : Activity() {
     }
 
     private val playerListener = object : Player.Listener {
-        override fun onPlayerError(error: PlaybackException) = handlePlayerError(error)
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e(TAG, "player error ${error.errorCodeName}", error)
+            handlePlayerError(error)
+        }
 
-        override fun onPlaybackStateChanged(playbackState: Int) = handlePlaybackState(playbackState)
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            handlePlaybackState(playbackState)
+        }
     }
 
     private fun handlePlayerError(error: PlaybackException) {
@@ -287,6 +293,10 @@ class VideoPlayerActivity : Activity() {
             exo.setMediaItem(item)
         }
         exo.prepare()
+        if (localFile != null && resumePositionMs > 0) {
+            exo.seekTo(resumePositionMs)
+            resumePositionMs = 0L
+        }
         exo.playWhenReady = true
         binding.playerView.hideController()
     }
@@ -545,6 +555,37 @@ class VideoPlayerActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** 进入后台就释放解码器：电视硬解路数有限，留着会顶掉首页视频壁纸 */
+    override fun onStop() {
+        super.onStop()
+        if (webMode) {
+            binding.webView.onPause()
+            return
+        }
+        resumePositionMs = player?.currentPosition ?: 0L
+        handler.removeCallbacks(loadingShowRunnable)
+        binding.playerView.player = null
+        player?.release()
+        player = null
+        hideLoading()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (webMode) {
+            binding.webView.onResume()
+            return
+        }
+        // 从后台回来重建播放器，接着刚才的位置继续放
+        if (localFile != null && player == null) {
+            triedCompatDecode = false
+            retryCount = 0
+            readyAt = 0L
+            buildPlayer(compatDecode = false)
+            startPlayback()
+        }
+    }
+
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         player?.release()
@@ -561,6 +602,7 @@ class VideoPlayerActivity : Activity() {
         private const val MAX_RETRY = 3
         private const val RETRY_DELAY_MS = 2500L
         private const val CONTROLLER_TIMEOUT_MS = 3000
+        private const val TAG = "MyTVPlayer"
 
         /** 能唤醒播放按钮的按键（遥控器 OK、左右快进快退、播放暂停等） */
         private val CONTROL_KEYS = setOf(

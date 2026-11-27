@@ -8,6 +8,7 @@ import android.os.Environment
 import com.aitv.launcher.App
 import com.aitv.launcher.Prefs
 import java.io.File
+import java.io.FileOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Collections
@@ -77,19 +78,37 @@ object StorageUtils {
         return volumes().firstOrNull { it != primaryVolume() && isRemovable(it) && it.canWrite() }
     }
 
-    /** 相册目录：优先用户指定，其次 U 盘的 Photos，最后退回应用私有目录 */
+    /** 相册目录：优先用户指定，其次 U 盘的 Photos，最后退回应用私有目录。
+     *  有些电视的 U 盘挂载点 canWrite() 为 true，但实际写入会报 I/O error，
+     *  所以这里必须做一次真实写入探测，不可写就自动退回应用目录。 */
     fun photoTarget(ctx: Context): File {
         val custom = Prefs.photoDir.trim()
-        val dir = when {
-            custom.isNotEmpty() -> File(custom)
-            else -> {
-                val usb = removableVolume()
-                if (usb != null) File(usb, "Photos")
-                else File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "Photos")
-            }
+        val candidates = ArrayList<File>()
+        if (custom.isNotEmpty()) candidates.add(File(custom))
+        removableVolume()?.let { candidates.add(File(it, "Photos")) }
+        candidates.add(File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "Photos"))
+        candidates.add(File(ctx.filesDir, "Photos"))
+
+        for (dir in candidates) {
+            if (isWritableDir(dir)) return dir
         }
-        if (!dir.exists()) dir.mkdirs()
-        return dir
+        return candidates.last()
+    }
+
+    /** 真正创建并写入一个探针文件，避免 U 盘挂载点“看起来可写、实际 I/O error”。 */
+    private fun isWritableDir(dir: File): Boolean {
+        var probe: File? = null
+        return try {
+            if (!dir.exists() && !dir.mkdirs()) return false
+            if (!dir.isDirectory || !dir.canWrite()) return false
+            probe = File(dir, ".write_probe_${System.nanoTime()}")
+            FileOutputStream(probe).use { it.write(1) }
+            true
+        } catch (t: Throwable) {
+            false
+        } finally {
+            runCatching { probe?.delete() }
+        }
     }
 
     fun downloadDirs(): List<File> {
@@ -182,9 +201,12 @@ object StorageUtils {
 fun photoPathText(ctx: Context): String {
     val dir = StorageUtils.photoTarget(ctx)
     val usb = StorageUtils.removableVolume()
-    return if (usb != null && dir.absolutePath.startsWith(usb.absolutePath)) {
-        dir.absolutePath + "（U 盘）"
-    } else {
-        dir.absolutePath + "（未检测到 U 盘，暂存应用目录）"
+    return when {
+        usb != null && dir.absolutePath.startsWith(usb.absolutePath) ->
+            dir.absolutePath + "（U 盘）"
+        usb != null ->
+            dir.absolutePath + "（U 盘不可写，暂存应用目录）"
+        else ->
+            dir.absolutePath + "（未检测到 U 盘，暂存应用目录）"
     }
 }

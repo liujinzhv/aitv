@@ -17,9 +17,9 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 直播频道本地缓存：
- * - 频道名称 / 分组 / 地址 / 台标 URL 和解析顺序存成 JSON，离线打开也能先展示；
- * - 台标图片下载到 files/live_logos，后续直接读本地文件，不再依赖源站；
- * - 刷新源时只在成功解析到频道后覆盖缓存，网络失败保留上一次结果。
+ * - 频道名称 / 分组 / 地址 / 台标 URL 和解析顺序只存 SQLite（live_channel），离线打开直接查库；
+ * - 台标图片下载到 files/live_logos，并把本地路径回写到 live_channel.logo_path，后续不再依赖源站；
+ * - 换源（手填地址或 Download 目录里的 m3u 变化）时只保留新源：旧频道行和旧台标文件一起删除。
  */
 object LiveRepo {
 
@@ -29,6 +29,12 @@ object LiveRepo {
 
     /** 同一个站点连续失败这么多次后，本次不再尝试它下面的台标 */
     private const val HOST_FAIL_LIMIT = 3
+
+    /** 单个台标最多尝试次数：失败到这个次数后不再重试，避免每次进页面都白跑一遍网络 */
+    private const val MAX_LOGO_TRIES = 3
+
+    /** 上次写入 SQLite 的直播源列表指纹；源文件增删/改路径时用来判断要不要清掉旧台标 */
+    private const val META_SOURCE_SIG = "live_sources_sig"
 
     /** 内存里保留一份解析结果，避免反复解析大 JSON */
     @Volatile
@@ -47,33 +53,40 @@ object LiveRepo {
 
     fun cached(): List<LiveChannel> {
         memCache?.let { return it }
-        val parsed = try {
-            val array = JSONArray(Prefs.liveChannels)
-            buildList {
-                for (i in 0 until array.length()) {
-                    val obj = array.optJSONObject(i) ?: continue
-                    val name = obj.optString("name").trim()
-                    val url = obj.optString("url").trim()
-                    if (name.isEmpty() || url.isEmpty()) continue
-                    add(
-                        LiveChannel(
-                            name = name,
-                            url = url,
-                            group = obj.optString("group", "未分组").ifBlank { "未分组" },
-                            logo = obj.optString("logo").trim().ifBlank { null },
-                            index = obj.optInt("index", i)
-                        )
-                    )
-                }
-            }
-        } catch (t: Throwable) {
+        val channels = runCatching { MediaIndex.liveChannels() }.getOrElse {
+            App.logWarn("读取直播频道索引失败", it)
             emptyList()
         }
-        memCache = parsed
-        return parsed
+        memCache = channels
+        return channels
     }
 
-    fun lastUpdated(): Long = Prefs.liveChannelsAt
+    fun lastUpdated(): Long {
+        val pref = Prefs.liveChannelsAt
+        if (pref > 0L) return pref
+        return MediaIndex.meta("live_updated_at")?.toLongOrNull() ?: 0L
+    }
+
+    /**
+     * 配置新的直播源时先清空旧数据：SQLite 里的旧频道、files/live_logos 里的旧台标全部删除。
+     * 不做旧 JSON 兼容，旧数据不再迁移。
+     */
+    fun resetForNewSource() {
+        clearChannelsAndLogos()
+        Prefs.liveChannels = ""
+        Prefs.liveChannelsAt = 0L
+        M3uRepo.invalidate()
+    }
+
+    /** 只清频道库、本地台标和源指纹，不动用户配置的源地址 */
+    private fun clearChannelsAndLogos() {
+        memCache = emptyList()
+        runCatching { MediaIndex.clearLiveChannels() }
+        runCatching { logoDir.deleteRecursively() }
+        runCatching { MediaIndex.putMeta(META_SOURCE_SIG, "") }
+    }
+
+    private fun sourceSignature(): String = M3uRepo.sources().joinToString("\n")
 
     fun favorites(): List<LiveChannel> {
         return try {
@@ -138,6 +151,11 @@ object LiveRepo {
                 callback(cached, false)
                 return@io
             }
+            // 已有 SQLite 频道缓存时不再每次进页面都重新解析源；只有显式刷新才联网
+            if (!force && cached.isNotEmpty()) {
+                callback(cached, false)
+                return@io
+            }
             progress("正在读取直播源…")
             val list = try {
                 M3uRepo.load(force, progress)
@@ -154,56 +172,52 @@ object LiveRepo {
         }
     }
 
+    /** 设置里改了直播源后做一次全量刷新（重新解析所有源并写 SQLite） */
+    fun refreshAll(progress: (String) -> Unit = {}, callback: (fresh: Boolean, count: Int) -> Unit) {
+        Async.io {
+            val signature = sourceSignature()
+            val list = try {
+                M3uRepo.load(true, progress)
+            } catch (t: Throwable) {
+                App.logWarn("直播源全量刷新失败", t)
+                emptyList()
+            }
+            if (list.isNotEmpty()) {
+                // Download 目录里的 m3u 变化也算换源：解析成功后再删旧频道/旧台标；
+                // 解析失败则保留上一次可用频道，不提前清空。
+                val oldSignature = MediaIndex.meta(META_SOURCE_SIG).orEmpty()
+                if (oldSignature.isNotBlank() && oldSignature != signature) {
+                    clearChannelsAndLogos()
+                }
+                save(list)
+                callback(true, list.size)
+            } else {
+                callback(false, cached().size)
+            }
+        }
+    }
+
     fun save(channels: List<LiveChannel>) {
-        // 手工拼 JSON：几千频道时 JSONObject/JSONArray 的中间对象比结果字符串还大，
-        // 在低内存电视上很容易触发 OOM 而被系统杀掉进程。
-        val sb = StringBuilder(channels.size * 96)
-        sb.append('[')
-        for ((position, channel) in channels.withIndex()) {
-            if (position > 0) sb.append(',')
-            sb.append('{')
-            sb.field("name", channel.name, true)
-            sb.field("url", channel.url, false)
-            sb.field("group", channel.group, false)
-            sb.field("logo", channel.logo ?: "", false)
-            sb.append(",\"index\":").append(channel.index.takeIf { it > 0 } ?: position)
-            sb.append('}')
-        }
-        sb.append(']')
+        // 频道列表写 SQLite；台标仍按 logo URL 哈希缓存在 files/live_logos。
+        // 不再把几千频道拼成 SharedPreferences JSON，减少一次大字符串和中间对象的内存峰值。
         memCache = channels
-        Prefs.liveChannels = sb.toString()
-        Prefs.liveChannelsAt = System.currentTimeMillis()
-    }
-
-    private fun StringBuilder.field(key: String, value: String, first: Boolean) {
-        if (!first) append(',')
-        append('"').append(key).append("\":\"").append(escapeJson(value)).append('"')
-    }
-
-    private fun escapeJson(value: String): String {
-        var needs = false
-        for (c in value) {
-            if (c == '"' || c == '\\' || c < ' ') {
-                needs = true
-                break
-            }
+        val now = System.currentTimeMillis()
+        runCatching {
+            MediaIndex.saveLiveChannels(channels)
+            MediaIndex.putMeta(META_SOURCE_SIG, sourceSignature())
+            Prefs.liveChannels = ""
+        }.onFailure {
+            App.logWarn("直播频道写入 SQLite 失败", it)
         }
-        if (!needs) return value
-        val sb = StringBuilder(value.length + 8)
-        for (c in value) {
-            when (c) {
-                '"' -> sb.append("\\\"")
-                '\\' -> sb.append("\\\\")
-                '\n' -> sb.append("\\n")
-                '\r' -> sb.append("\\r")
-                '\t' -> sb.append("\\t")
-                else -> if (c < ' ') sb.append(String.format("\\u%04x", c.code)) else sb.append(c)
-            }
-        }
-        return sb.toString()
+        Prefs.liveChannelsAt = now
     }
 
     fun logoFile(channel: LiveChannel): File? {
+        val cached = channel.logoPath?.trim().orEmpty()
+        if (cached.isNotEmpty()) {
+            val file = File(cached)
+            if (file.exists() && file.length() > 0L) return file
+        }
         val logo = channel.logo?.trim().orEmpty()
         if (logo.isEmpty()) return null
         return File(logoDir, sha1(logo) + ".img")
@@ -224,10 +238,14 @@ object LiveRepo {
     ) {
         val lowRam = isLowRam()
         val limit = if (lowRam) 120 else MAX_LOGOS
+        // 已经失败满 3 次的台标不再尝试，避免每次进页面都白跑一遍网络
+        val attempts = runCatching { MediaIndex.logoTries() }.getOrDefault(emptyMap())
         val targets = channels
             .asSequence()
             .filter { it.logo?.startsWith("http", true) == true }
-            .filterNot { hasLogo(it) }
+            .filter { (attempts[it.logo] ?: 0) < MAX_LOGO_TRIES }
+            // 本地文件可能已存在但 SQLite 里的 logo_path 还没回写，也要补一次记录
+            .filter { it.logoPath.isNullOrBlank() || !hasLogo(it) }
             .take(limit)
             .toList()
         if (targets.isEmpty()) {
@@ -248,6 +266,12 @@ object LiveRepo {
                     val ok = if (failed >= HOST_FAIL_LIMIT) false else downloadLogo(channel)
                     if (!ok && failed < HOST_FAIL_LIMIT) {
                         hostFails.computeIfAbsent(host) { AtomicInteger() }.incrementAndGet()
+                    }
+                    if (!ok) {
+                        val tries = runCatching { MediaIndex.bumpLogoTries(channel.logo.orEmpty()) }.getOrDefault(0)
+                        if (tries >= MAX_LOGO_TRIES) {
+                            App.log("台标已失败 $tries 次，后续不再尝试：${channel.name}")
+                        }
                     }
                     val count = done.incrementAndGet()
                     if (count == total || count - lastReported.get() >= 8) {
@@ -276,7 +300,10 @@ object LiveRepo {
     private fun downloadLogo(channel: LiveChannel): Boolean {
         val source = channel.logo?.trim().orEmpty()
         val dest = logoFile(channel) ?: return false
-        if (dest.exists() && dest.length() > 0) return true
+        if (dest.exists() && dest.length() > 0) {
+            runCatching { MediaIndex.updateLiveLogo(source, dest.absolutePath) }
+            return true
+        }
         if (inFlight.putIfAbsent(dest.name, true) != null) return false
         var temp: File? = null
         return try {
@@ -303,7 +330,9 @@ object LiveRepo {
                 }
                 if (written <= 0) return false
                 if (dest.exists()) dest.delete()
-                temp!!.renameTo(dest) || temp!!.copyTo(dest, overwrite = true).length() > 0
+                val saved = temp!!.renameTo(dest) || temp!!.copyTo(dest, overwrite = true).length() > 0
+                if (saved) runCatching { MediaIndex.updateLiveLogo(source, dest.absolutePath) }
+                saved
             }
         } catch (t: Throwable) {
             false

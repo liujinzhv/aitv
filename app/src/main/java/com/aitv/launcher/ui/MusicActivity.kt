@@ -32,6 +32,7 @@ import com.aitv.launcher.util.dp
 import com.aitv.launcher.util.focusScale
 import com.aitv.launcher.util.formatDuration
 import com.aitv.launcher.util.immersive
+import com.aitv.launcher.util.lightPageChrome
 import com.aitv.launcher.util.keepScreenOn
 import com.aitv.launcher.util.toast
 import kotlin.math.max
@@ -41,7 +42,7 @@ class MusicActivity : Activity() {
     private lateinit var binding: ActivityMusicBinding
     private val handler = Handler(Looper.getMainLooper())
 
-    private var tracks: List<AudioTrack> = emptyList()
+    private var tracks: MutableList<AudioTrack> = mutableListOf()
     private var shownTracks: List<AudioTrack> = emptyList()
     private var trackAdapter: TrackAdapter? = null
     private var playlistAdapter: PlaylistAdapter? = null
@@ -72,6 +73,7 @@ class MusicActivity : Activity() {
         binding = ActivityMusicBinding.inflate(layoutInflater)
         setContentView(binding.root)
         immersive()
+        lightPageChrome()
         keepScreenOn()
 
         binding.trackList.layoutManager = LinearLayoutManager(this)
@@ -214,7 +216,8 @@ class MusicActivity : Activity() {
                 runOnUiThread { binding.scanState.text = msg }
             }
             runOnUiThread {
-                tracks = list
+                tracks.clear()
+                tracks.addAll(list)
                 binding.countText.text = "${list.size} 首"
                 binding.scanState.text = if (list.isEmpty()) "没有找到音频" else "扫描完成"
                 binding.trackEmpty.text = "没有找到音频文件\n把音乐放进 U 盘，或在设置里指定音乐目录"
@@ -244,10 +247,10 @@ class MusicActivity : Activity() {
         binding.tabSongs.isSelected = active == 0
         binding.tabPlaylists.isSelected = active == 1
         binding.tabSongs.setTextColor(
-            ContextCompat.getColor(this, if (active == 0) R.color.white else R.color.text_dim)
+            ContextCompat.getColor(this, if (active == 0) R.color.light_text else R.color.light_text_dim)
         )
         binding.tabPlaylists.setTextColor(
-            ContextCompat.getColor(this, if (active == 1) R.color.white else R.color.text_dim)
+            ContextCompat.getColor(this, if (active == 1) R.color.light_text else R.color.light_text_dim)
         )
     }
 
@@ -286,7 +289,7 @@ class MusicActivity : Activity() {
             binding.playlistTitle.text = "歌单：$currentPlaylist · ${queue.size} 首（点「我的歌单」返回）"
             binding.trackEmpty.visibility = if (queue.isEmpty()) View.VISIBLE else View.GONE
             binding.trackEmpty.text = "这个歌单还没有歌曲\n回到「全部歌曲」长按歌曲即可加入"
-            trackAdapter = buildTrackAdapter(queue, inPlaylist = true)
+            trackAdapter = buildTrackAdapter(queue.toMutableList(), inPlaylist = true)
             binding.trackList.adapter = trackAdapter
             if (queue.isNotEmpty()) {
                 binding.trackList.post { binding.trackList.getChildAt(0)?.requestFocus() }
@@ -302,7 +305,7 @@ class MusicActivity : Activity() {
         binding.trackList.adapter = trackAdapter
     }
 
-    private fun buildTrackAdapter(list: List<AudioTrack>, inPlaylist: Boolean): TrackAdapter {
+    private fun buildTrackAdapter(list: MutableList<AudioTrack>, inPlaylist: Boolean): TrackAdapter {
         val adapter = TrackAdapter(
             list,
             onClick = { track ->
@@ -322,6 +325,12 @@ class MusicActivity : Activity() {
                         .show()
                 } else {
                     choosePlaylistFor(track)
+                }
+            },
+            onEnriched = { enriched ->
+                if (!isFinishing && !isDestroyed && MusicPlayer.currentTrack?.path == enriched.path) {
+                    MusicPlayer.updateTrack(enriched)
+                    bindNow(forceLyrics = false)
                 }
             }
         )
@@ -356,8 +365,8 @@ class MusicActivity : Activity() {
     private fun promptCreatePlaylist(trackToAdd: AudioTrack?) {
         val input = EditText(this).apply {
             hint = "歌单名称"
-            setTextColor(android.graphics.Color.WHITE)
-            setHintTextColor(android.graphics.Color.GRAY)
+            setTextColor(ContextCompat.getColor(context, R.color.light_text))
+            setHintTextColor(ContextCompat.getColor(context, R.color.light_text_faint))
         }
         val container = android.widget.FrameLayout(this).apply {
             setPadding(dp(24f), dp(8f), dp(24f), 0)
@@ -411,7 +420,7 @@ class MusicActivity : Activity() {
                         val input = EditText(this).apply {
                             setText(playlist.name)
                             setSelection(text.length)
-                            setTextColor(android.graphics.Color.WHITE)
+                            setTextColor(ContextCompat.getColor(context, R.color.light_text))
                         }
                         val container = android.widget.FrameLayout(this).apply {
                             setPadding(dp(24f), dp(8f), dp(24f), 0)
@@ -461,7 +470,7 @@ class MusicActivity : Activity() {
             binding.nowTitle.text = "选择一首歌开始播放"
             binding.nowArtist.text = if (tracks.isEmpty()) "音乐库为空" else "共 ${tracks.size} 首 · 选中后按 OK 播放"
             binding.cover.setImageDrawable(null)
-            binding.cover.setBackgroundResource(R.drawable.bg_poster)
+            binding.cover.setBackgroundResource(R.drawable.bg_poster_cream)
             binding.btnPlay.setImageResource(R.drawable.ic_play)
             binding.lyricsHint.text = "选中歌曲后自动刮削歌词"
             binding.lyricsHint.visibility = View.VISIBLE
@@ -568,12 +577,16 @@ class MusicActivity : Activity() {
 }
 
 class TrackAdapter(
-    private val items: List<AudioTrack>,
+    private val items: MutableList<AudioTrack>,
     private val onClick: (AudioTrack) -> Unit,
-    private val onLongClick: (AudioTrack) -> Unit
+    private val onLongClick: (AudioTrack) -> Unit,
+    private val onEnriched: (AudioTrack) -> Unit = {}
 ) : RecyclerView.Adapter<TrackAdapter.VH>() {
 
     var activePath: String? = null
+
+    private val main = Handler(Looper.getMainLooper())
+    private val loadingMeta = HashSet<String>()
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.trackTitle)
@@ -594,17 +607,34 @@ class TrackAdapter(
         val item = items[position]
         holder.title.text = item.title
         holder.artist.text = item.artist
-        holder.duration.text = formatDuration(item.durationMs)
+        holder.duration.text = if (item.metadataLoaded) formatDuration(item.durationMs) else "--:--"
         val active = item.path == activePath
         holder.itemView.isSelected = active
-        val accent = ContextCompat.getColor(holder.itemView.context, R.color.accent)
-        val normal = ContextCompat.getColor(holder.itemView.context, R.color.text)
+        val accent = ContextCompat.getColor(holder.itemView.context, R.color.light_accent)
+        val normal = ContextCompat.getColor(holder.itemView.context, R.color.light_text)
         holder.title.setTextColor(if (active) accent else normal)
-        holder.icon.setColorFilter(if (active) accent else ContextCompat.getColor(holder.itemView.context, R.color.text_dim))
+        holder.icon.setColorFilter(if (active) accent else ContextCompat.getColor(holder.itemView.context, R.color.light_text_dim))
         holder.itemView.setOnClickListener { onClick(item) }
         holder.itemView.setOnLongClickListener {
             onLongClick(item)
             true
+        }
+
+        // 只给可见歌曲补标签，避免打开音乐库时把几千首歌的音频头全部读一遍
+        if (!item.metadataLoaded && loadingMeta.add(item.path)) {
+            Async.io {
+                val enriched = MediaScanner.enrichAudio(item)
+                main.post {
+                    loadingMeta.remove(item.path)
+                    if (!enriched.metadataLoaded) return@post
+                    val index = items.indexOfFirst { it.path == enriched.path }
+                    if (index >= 0) {
+                        items[index] = enriched
+                        notifyItemChanged(index)
+                        onEnriched(enriched)
+                    }
+                }
+            }
         }
     }
 }
@@ -638,7 +668,7 @@ class PlaylistAdapter(
         holder.title.text = item.name
         holder.artist.text = if (item.paths.isEmpty()) "空歌单 · 长按歌曲加入" else "长按歌曲可继续添加"
         holder.duration.text = "${item.paths.size} 首"
-        holder.icon.setColorFilter(ContextCompat.getColor(holder.itemView.context, R.color.accent))
+        holder.icon.setColorFilter(ContextCompat.getColor(holder.itemView.context, R.color.light_accent))
         holder.itemView.setOnClickListener { onClick(item) }
         holder.itemView.setOnLongClickListener {
             onLongClick(item)
@@ -666,12 +696,12 @@ class LyricAdapter(
         val textView = holder.itemView as TextView
         textView.text = lines[position].text
         if (position == active) {
-            textView.setTextColor(ContextCompat.getColor(textView.context, R.color.white))
+            textView.setTextColor(ContextCompat.getColor(textView.context, R.color.light_text))
             textView.alpha = 1f
             textView.textSize = 20f
             textView.setTypeface(null, android.graphics.Typeface.BOLD)
         } else {
-            textView.setTextColor(0x99FFFFFF.toInt())
+            textView.setTextColor(0x9923272E.toInt())
             textView.alpha = 0.85f
             textView.textSize = 17f
             textView.setTypeface(null, android.graphics.Typeface.NORMAL)

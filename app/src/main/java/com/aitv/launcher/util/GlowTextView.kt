@@ -42,6 +42,8 @@ class GlowTextView @JvmOverloads constructor(
     }
 
     private fun ensureGlow(): Bitmap? {
+        // 深色文字配白色光晕会在浅色背景上糊成一团，直接不画光晕
+        if (android.graphics.Color.luminance(currentTextColor) < 0.5f) return null
         val layout = layout ?: return null
         val w = width
         val h = height

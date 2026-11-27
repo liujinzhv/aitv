@@ -18,6 +18,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -40,7 +41,8 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
-            android:stateNotNeeded="true">
+            android:stateNotNeeded="true"
+            android:theme="@style/HomeTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
@@ -53,28 +55,27 @@
         <activity
             android:name=".ui.AllAppsActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.MusicActivity"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.LiveActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.VideoActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
-
-        <activity
-            android:name=".ui.VideoDetailActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.VideoPlayerActivity"
@@ -86,7 +87,8 @@
         <activity
             android:name=".ui.GalleryActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.PhotoViewActivity"
@@ -95,25 +97,23 @@
             android:theme="@style/BlackTheme" />
 
         <activity
-            android:name=".ui.UploadActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-
-        <activity
             android:name=".ui.DownloadActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.BrowserActivity"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:theme="@style/LightPageTheme" />
 
         <activity
             android:name=".ui.LockScreenActivity"
@@ -121,7 +121,7 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="landscape" />
+            android:theme="@style/LockTheme" />
 
         <receiver
             android:name=".admin.MytvDeviceAdminReceiver"
@@ -170,6 +170,16 @@
         <receiver
             android:name=".player.MusicActionReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".update.UpdateDownloadReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

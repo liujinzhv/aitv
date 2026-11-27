@@ -23,7 +23,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="全部应用"
-                android:textColor="@color/text"
+                android:textColor="@color/light_text"
                 android:textSize="34sp"
                 android:textStyle="bold" />
 
@@ -33,7 +33,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="16dp"
                 android:text=""
-                android:textColor="@color/text_dim"
+                android:textColor="@color/light_text_dim"
                 android:textSize="15sp" />
 
             <Space
@@ -44,8 +44,8 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="按返回键回到桌面"
-                android:textColor="@color/text_faint"
+                android:text="长按 OK / 菜单键卸载应用 · 返回键回桌面"
+                android:textColor="@color/light_text_faint"
                 android:textSize="13sp" />
         </LinearLayout>
 
@@ -55,14 +55,18 @@
             android:layout_height="0dp"
             android:layout_marginTop="24dp"
             android:layout_weight="1"
-            android:clipToPadding="false" />
+            android:clipToPadding="false"
+            android:paddingStart="20dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="14dp" />
 
         <TextView
             android:id="@+id/emptyText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="未找到可启动的应用"
-            android:textColor="@color/text_faint"
+            android:textColor="@color/light_text_faint"
             android:textSize="16sp"
             android:visibility="gone" />
     </LinearLayout>

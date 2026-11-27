@@ -1,5 +1,6 @@
 package com.aitv.launcher.util
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -29,23 +30,37 @@ import java.util.WeakHashMap
  */
 object SelectionFx {
 
-    private const val FOCUS_FILL = 0x404EA1FF
-    private const val FOCUS_STROKE = -0x1
-    private const val SELECTED_FILL = 0x404EA1FF
-    private const val SELECTED_STROKE = 0xFF4EA1FF.toInt()
+    private const val FOCUS_FILL = 0xFFDCE8FF.toInt()
+    private const val FOCUS_STROKE = 0xFF2563EB.toInt()
+    private const val SELECTED_FILL = 0xFFD2E2FF.toInt()
+    private const val SELECTED_STROKE = 0xFF2563EB.toInt()
 
     private val decorated = WeakHashMap<View, Boolean>()
+    private val focusAnims = WeakHashMap<View, ValueAnimator>()
 
     fun applyFocus(view: View, scale: Float = 1.03f, elevationDp: Float = 6f) {
         if (decorated.containsKey(view)) return
         decorated[view] = true
         view.setOnFocusChangeListener { v, hasFocus ->
-            v.animate().cancel()
-            v.animate()
-                .scaleX(if (hasFocus) scale else 1f)
-                .scaleY(if (hasFocus) scale else 1f)
-                .setDuration(160)
-                .start()
+            // 不用 ViewPropertyAnimator：RecyclerView 的 item 动画也挂在同一个 animator 上，
+            // focus 变化时 cancel 会把 item 动画一起结束，在动画回调里触发 removeView 导致崩溃。
+            focusAnims.remove(v)?.cancel()
+            val target = if (hasFocus) scale else 1f
+            val from = v.scaleX
+            if (from == target) {
+                v.scaleY = target
+            } else {
+                val anim = ValueAnimator.ofFloat(from, target).apply {
+                    duration = 140L
+                    addUpdateListener { it ->
+                        val value = it.animatedValue as Float
+                        v.scaleX = value
+                        v.scaleY = value
+                    }
+                    start()
+                }
+                focusAnims[v] = anim
+            }
             v.elevation = if (hasFocus) v.context.dp(elevationDp).toFloat() else 0f
             v.isActivated = hasFocus
             setGlow(v, hasFocus)

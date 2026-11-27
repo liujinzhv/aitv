@@ -8,6 +8,6 @@
     android:paddingEnd="8dp"
     android:paddingBottom="7dp"
     android:text="分组"
-    android:textColor="@color/text_dim"
+    android:textColor="@color/light_text_dim"
     android:textSize="18sp"
     android:textStyle="bold" />

@@ -3,15 +3,14 @@ package com.aitv.launcher.ui
 import android.app.Activity
 import android.os.Bundle
 import android.view.KeyEvent
-import com.aitv.launcher.Prefs
 import com.aitv.launcher.databinding.ActivityPhotoViewBinding
 import com.aitv.launcher.media.ImageLoader
 import com.aitv.launcher.util.Async
+import com.aitv.launcher.util.WallpaperStore
 import com.aitv.launcher.util.immersive
 import com.aitv.launcher.util.keepScreenOn
 import com.aitv.launcher.util.toast
 import java.io.File
-import java.io.FileOutputStream
 
 class PhotoViewActivity : Activity() {
 
@@ -19,6 +18,7 @@ class PhotoViewActivity : Activity() {
     private var photoPath = ""
     private var settingWallpaper = false
     private var longPressHandled = false
+    private var shownBitmap: android.graphics.Bitmap? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,13 +48,27 @@ class PhotoViewActivity : Activity() {
         Async.io {
             val bitmap = ImageLoader.decode(photoPath, width, height)
             runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    bitmap?.recycle()
+                    return@runOnUiThread
+                }
                 if (bitmap != null) {
+                    binding.zoomImage.setImageDrawable(null)
+                    shownBitmap?.recycle()
+                    shownBitmap = bitmap
                     binding.zoomImage.setImageBitmap(bitmap)
                 } else {
                     toast("无法显示这张图片")
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        binding.zoomImage.setImageDrawable(null)
+        shownBitmap?.recycle()
+        shownBitmap = null
+        super.onDestroy()
     }
 
     private fun handleWallpaperKey(keyCode: Int, event: KeyEvent): Boolean {
@@ -92,37 +106,13 @@ class PhotoViewActivity : Activity() {
             return
         }
         settingWallpaper = true
-        toast("正在设为桌面背景…")
-        val width = resources.displayMetrics.widthPixels
-        val height = resources.displayMetrics.heightPixels
+        toast("正在设为桌面和智慧锁屏壁纸…")
         Async.io {
-            var saved: File? = null
-            val bitmap = ImageLoader.decode(photoPath, width, height)
-            if (bitmap != null) {
-                val dest = File(filesDir, "home_wallpaper_${System.currentTimeMillis()}.jpg")
-                try {
-                    FileOutputStream(dest).use { out ->
-                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
-                    }
-                    saved = dest
-                } catch (_: Throwable) {
-                    dest.delete()
-                } finally {
-                    bitmap.recycle()
-                }
-            }
-            val result = saved
+            // 电视没有系统 wallpaper 服务，改为复制到应用私有目录，首页和锁屏直接读取。
+            val ok = WallpaperStore.setImageFromFile(this, source)
             runOnUiThread {
                 settingWallpaper = false
-                if (result != null) {
-                    val old = File(Prefs.wallpaperImage)
-                    Prefs.wallpaperImage = result.absolutePath
-                    Prefs.wallpaper = ""
-                    if (old.parentFile == filesDir) old.delete()
-                    toast("已设为桌面背景")
-                } else {
-                    toast("设置失败，换一张图片试试")
-                }
+                toast(if (ok) "已设为桌面和智慧锁屏壁纸" else "设置失败，请换一张图片试试")
             }
         }
     }

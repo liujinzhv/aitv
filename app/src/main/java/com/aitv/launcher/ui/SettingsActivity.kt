@@ -11,7 +11,11 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
+import androidx.core.content.ContextCompat
 import com.aitv.launcher.Prefs
+import com.aitv.launcher.BuildConfig
 import com.aitv.launcher.R
 import com.aitv.launcher.databinding.ActivitySettingsBinding
 import com.aitv.launcher.databinding.ItemSettingBinding
@@ -21,13 +25,20 @@ import com.aitv.launcher.lock.LockController
 import com.aitv.launcher.lock.LockState
 import com.aitv.launcher.lock.QuestionBank
 import com.aitv.launcher.media.ImageLoader
+import com.aitv.launcher.media.LiveRepo
 import com.aitv.launcher.media.M3uRepo
 import com.aitv.launcher.media.MediaScanner
 import com.aitv.launcher.media.VideoScraper
+import com.aitv.launcher.update.UpdateDownloader
+import com.aitv.launcher.update.UpdatePrompt
+import com.aitv.launcher.util.Async
+import com.aitv.launcher.util.SystemWallpaper
+import com.aitv.launcher.util.WallpaperStore
 import com.aitv.launcher.util.dp
 import com.aitv.launcher.util.focusScale
 import com.aitv.launcher.util.formatSize
 import com.aitv.launcher.util.immersive
+import com.aitv.launcher.util.lightPageChrome
 import com.aitv.launcher.util.keepScreenOn
 import com.aitv.launcher.util.toast
 import com.aitv.launcher.weather.WeatherRepo
@@ -37,12 +48,18 @@ import java.util.Locale
 class SettingsActivity : Activity() {
 
     private lateinit var binding: ActivitySettingsBinding
+    private var scanDialog: AlertDialog? = null
+    private var scanning = false
+    private var refreshingLive = false
+    private val wallpaperRequest = 3001
+    private val videoWallpaperRequest = 3002
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
         immersive()
+        lightPageChrome()
         keepScreenOn()
 
         // 家长验证：输对 4 位家长密码后才允许查看/修改设置，防止孩子关掉锁屏
@@ -56,6 +73,36 @@ class SettingsActivity : Activity() {
             },
             onCancel = { finish() }
         ).show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从“安装未知应用”设置页返回后继续安装，避免用户还要再点一次
+        if (binding.settingRows.visibility == View.VISIBLE) {
+            if (!UpdateDownloader.checkInstallResult(this)) {
+                UpdateDownloader.installIfReady(this)
+            }
+        }
+    }
+
+    @Deprecated("Deprecated in API 30, TV 兼容旧回调")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if ((requestCode == wallpaperRequest || requestCode == videoWallpaperRequest) &&
+            resultCode == RESULT_OK
+        ) {
+            buildRows()
+            focusWallpaperRow()
+        }
+    }
+
+    /** 重建行后焦点会丢，把焦点送回「桌面壁纸」。 */
+    private fun focusWallpaperRow() {
+        binding.settingRows.postDelayed({
+            val after = if (WallpaperStore.has(this)) 7 else 6
+            val index = binding.settingRows.childCount - after
+            if (index >= 0) binding.settingRows.getChildAt(index)?.requestFocus()
+        }, 120)
     }
 
     private fun buildRows() {
@@ -132,6 +179,7 @@ class SettingsActivity : Activity() {
                 Prefs.musicDirs = value
                 MediaScanner.invalidate()
                 buildRows()
+                startScanDialog()
             }
         }
         addRow("视频目录", "多个目录用 ; 分隔，留空自动扫描", Prefs.videoDirs.ifBlank { "自动" }) {
@@ -139,6 +187,7 @@ class SettingsActivity : Activity() {
                 Prefs.videoDirs = value
                 MediaScanner.invalidate()
                 buildRows()
+                startScanDialog()
             }
         }
         addRow(
@@ -148,15 +197,25 @@ class SettingsActivity : Activity() {
         ) {
             edit("直播源", Prefs.liveSources, multiline = true) { value ->
                 Prefs.liveSources = value
-                M3uRepo.invalidate()
+                // 新源生效前先删旧频道和旧台标，避免新旧混在一起占空间
+                LiveRepo.resetForNewSource()
                 buildRows()
+                refreshLiveChannels()
             }
+        }
+        addRow(
+            "刷新直播频道",
+            "重新解析全部直播源，并把频道写入 SQLite；失败时保留上一次可用频道",
+            if (LiveRepo.cached().isEmpty()) "暂无频道" else "${LiveRepo.cached().size} 个频道"
+        ) {
+            refreshLiveChannels()
         }
         addRow("相册 / 上传目录", "手机上传照片会存到该目录；留空自动选 U 盘 Photos", Prefs.photoDir.ifBlank { "自动（U 盘 Photos）" }) {
             edit("相册 / 上传目录", Prefs.photoDir) { value ->
                 Prefs.photoDir = value
                 MediaScanner.invalidate()
                 buildRows()
+                startScanDialog()
             }
         }
         addRow("上传端口", "手机访问 http://电视IP:端口", Prefs.uploadPort.toString()) {
@@ -309,26 +368,48 @@ class SettingsActivity : Activity() {
                 .setPositiveButton("知道了", null)
                 .show()
         }
+        val wallpaperKind = WallpaperStore.kind(this)
+        val hasLocalWallpaper = wallpaperKind != WallpaperStore.Kind.NONE
         addRow(
-            "桌面背景视频",
-            "填视频文件绝对路径；留空则使用相册设置的图片或内置「阖家团圆」背景",
-            Prefs.wallpaper.ifBlank { "内置团圆图" }
-        ) {
-            edit("桌面背景视频", Prefs.wallpaper) { value ->
-                Prefs.wallpaper = value
-                Prefs.wallpaperImage = ""
-                buildRows()
+            "桌面壁纸",
+            "从相册选图片，或从影视库选视频；视频静音循环播放，应用内保存，不依赖电视系统壁纸服务",
+            when (wallpaperKind) {
+                WallpaperStore.Kind.IMAGE -> "图片壁纸 · 去更换"
+                WallpaperStore.Kind.VIDEO -> "视频壁纸 · 循环播放 · 去更换"
+                WallpaperStore.Kind.NONE ->
+                    if (SystemWallpaper.hasWallpaper(this)) {
+                        "${SystemWallpaper.label(this)} · 去更换"
+                    } else {
+                        "未设置 · 去选择"
+                    }
             }
-        }
-        addRow(
-            "恢复默认桌面背景",
-            "清除自定义图片或视频，恢复内置「阖家团圆」背景",
-            "立即恢复"
         ) {
-            Prefs.wallpaper = ""
-            Prefs.wallpaperImage = ""
-            toast("已恢复默认团圆背景")
-            buildRows()
+            val choices = arrayOf("选择图片壁纸（相册）", "选择视频壁纸（影视库）")
+            AlertDialog.Builder(this)
+                .setTitle("桌面壁纸")
+                .setItems(choices) { _, which ->
+                    when (which) {
+                        0 -> startActivityForResult(
+                            Intent(this, GalleryActivity::class.java)
+                                .putExtra(GalleryActivity.EXTRA_PICK_WALLPAPER, true),
+                            wallpaperRequest
+                        )
+                        1 -> startActivityForResult(
+                            Intent(this, VideoActivity::class.java)
+                                .putExtra(VideoActivity.EXTRA_PICK_WALLPAPER, true),
+                            videoWallpaperRequest
+                        )
+                    }
+                }
+                .show()
+        }
+        if (hasLocalWallpaper) {
+            addRow("恢复默认壁纸", "删除自定义壁纸，首页回到内置深色背景", "恢复") {
+                WallpaperStore.clear(this)
+                toast("已恢复默认壁纸")
+                buildRows()
+                focusWallpaperRow()
+            }
         }
         addRow("每行应用数", "4 / 5 / 6 列，影响「全部应用」网格", "${Prefs.columns} 列") {
             edit("每行应用数", Prefs.columns.toString(), numeric = true) { value ->
@@ -336,17 +417,15 @@ class SettingsActivity : Activity() {
                 buildRows()
             }
         }
-        addRow("重新扫描媒体库", "清除音频 / 视频 / 图片扫描缓存", "立即执行") {
-            MediaScanner.invalidate()
-            ImageLoader.clear()
-            toast("已清除扫描缓存")
+        addRow("重新扫描媒体库", "重建 SQLite 索引：新增文件入库，已删除文件出库", "立即执行") {
+            startScanDialog()
         }
-        addRow("清除刮削缓存", "删除视频元数据、海报与抽帧缩略图", "立即执行") {
+        addRow("清除刮削缓存", "删除视频元数据、海报与抽帧缩略图；文件索引仍保留", "立即执行") {
             VideoScraper.clearMeta(this)
             VideoScraper.clearArtwork(this)
             ImageLoader.clear()
-            MediaScanner.invalidate()
-            toast("刮削缓存已清除")
+            MediaScanner.clearScrapedMetadata()
+            toast("刮削缓存已清除，下次打开影视页会重新读取可见项")
         }
         addRow(
             "网页浏览器",
@@ -355,22 +434,125 @@ class SettingsActivity : Activity() {
         ) {
             startActivity(android.content.Intent(this, BrowserActivity::class.java))
         }
-        addRow("关于 智慧家庭TV", "Android 8 TV 桌面 · 本地媒体中心", "版本 1.3.1") {
+        addRow(
+            "检查更新",
+            "从 Gitee 读取最新发布版本；后台下载 APK，完成后自动拉起安装器",
+            "当前 ${BuildConfig.VERSION_NAME}"
+        ) {
+            UpdatePrompt.manualCheck(this)
+        }
+        addRow("关于 智慧家庭TV", "Android 8 TV 桌面 · 本地媒体中心", "版本 ${BuildConfig.VERSION_NAME}") {
             AlertDialog.Builder(this)
-                .setTitle("智慧家庭TV 1.3.1")
+                .setTitle("智慧家庭TV ${BuildConfig.VERSION_NAME}")
                 .setMessage(
-                    "桌面：时钟 / 农历日期 / 按定位获取的天气 / 网站收藏 + 应用入口\n" +
+                    "桌面：大时钟 / 农历 / 定位天气 / 6 张功能卡（直播、视频、相册、音乐、应用、设置）\n" +
+                        "壁纸：跟随系统桌面壁纸或动态壁纸，也可在设置里用图片 / 视频做应用内壁纸\n" +
                         "智慧锁屏：开关、自动锁屏时间、16 档难度、选择题 / 填空题、图片题 / 视频题、家长密码\n" +
                         "音乐：mp3 / flac / wav 等扫描 + 自定义歌单 + 顺序 / 随机播放 + LRC 同步\n" +
-                        "影视：只保留本地视频，点击海报直接播放\n" +
+                        "影视：本地视频海报墙，点击海报直接播放\n" +
                         "电视直播：读取配置的 m3u / m3u8，按分组展示全部频道，频道信息与台标本地缓存\n" +
-                        "相册：EXIF / 文件名 / 文件时间解析拍摄日期，按日期分组 + 手机直传\n" +
-                        "浏览器：网址浏览、收藏到首页、迅雷 thunder:// 与直链下载\n\n" +
+                        "相册：EXIF / 文件名 / 文件时间解析拍摄日期，按日期分组 + 手机扫码直传\n" +
+                        "全部应用：4 / 5 / 6 列网格，长按可卸载第三方应用\n" +
+                        "应用更新：从 Gitee 检查新版本并后台下载；自动安装被系统拦截时，提示从下载目录手动安装\n\n" +
                         "存储占用：" + formatSize(cacheSize())
                 )
                 .setPositiveButton("知道了", null)
                 .show()
         }
+    }
+
+    /** 全量重建媒体索引：显示“扫描中”模态框，完成后自动关闭并 toast 统计 */
+    private fun startScanDialog() {
+        if (scanning) return
+        scanning = true
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24f), dp(18f), dp(24f), dp(18f))
+        }
+        val title = TextView(this).apply {
+            text = "正在扫描媒体库"
+            setTextColor(ContextCompat.getColor(context, R.color.light_text))
+            textSize = 20f
+        }
+        val message = TextView(this).apply {
+            text = "正在准备扫描…"
+            setTextColor(ContextCompat.getColor(context, R.color.light_text_dim))
+            textSize = 14f
+            setPadding(0, dp(8f), 0, dp(12f))
+        }
+        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+        }
+        content.addView(title)
+        content.addView(message)
+        content.addView(
+            progress,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4f))
+        )
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(content)
+            .setCancelable(false)
+            .create()
+        scanDialog = dialog
+        dialog.show()
+
+        Async.io {
+            val result = MediaScanner.scanAll(this, { text ->
+                runOnUiThread {
+                    if (dialog.isShowing) message.text = text
+                }
+            }, force = true)
+            runOnUiThread {
+                scanning = false
+                scanDialog?.takeIf { it === dialog }?.dismiss()
+                scanDialog = null
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when {
+                    result.permissionDenied -> toast("未授予存储权限，无法扫描媒体库")
+                    !result.ok -> toast("扫描未完成，请稍后重试")
+                    else -> {
+                        val seconds = (result.elapsedMs / 1000.0).let {
+                            String.format(Locale.US, "%.1f", it)
+                        }
+                        toast(
+                            "扫描完成：音乐 ${result.audio} 首 · 视频 ${result.video} 部 · " +
+                                "照片 ${result.photo} 张（${seconds}s）"
+                        )
+                    }
+                }
+                buildRows()
+            }
+        }
+    }
+
+    /** 改直播源或手动刷新时，重新解析所有源并写 SQLite；失败保留旧频道 */
+    private fun refreshLiveChannels() {
+        if (refreshingLive) return
+        if (M3uRepo.sources().isEmpty()) {
+            toast("还没有配置直播源")
+            return
+        }
+        refreshingLive = true
+        toast("正在刷新直播频道…")
+        LiveRepo.refreshAll { fresh, count ->
+            runOnUiThread {
+                refreshingLive = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                toast(
+                    if (fresh) "直播频道已刷新：$count 个"
+                    else "直播源读取失败，继续使用本地 $count 个频道"
+                )
+                buildRows()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        scanDialog?.dismiss()
+        scanDialog = null
+        super.onDestroy()
     }
 
     private fun isDefaultHome(): Boolean {
@@ -473,7 +655,7 @@ class SettingsActivity : Activity() {
         val input = EditText(this).apply {
             setText(initial)
             setSelection(text.length)
-            setTextColor(Color.WHITE)
+            setTextColor(ContextCompat.getColor(context, R.color.light_text))
             setHintTextColor(Color.GRAY)
             if (numeric) {
                 inputType = InputType.TYPE_CLASS_NUMBER or

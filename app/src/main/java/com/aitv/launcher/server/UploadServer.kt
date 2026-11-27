@@ -3,6 +3,7 @@ package com.aitv.launcher.server
 import android.content.Context
 import android.media.MediaScannerConnection
 import fi.iki.elonen.NanoHTTPD
+import com.aitv.launcher.media.MediaScanner
 import com.aitv.launcher.util.StorageUtils
 import java.io.File
 import java.io.FileOutputStream
@@ -21,7 +22,8 @@ class UploadServer(
 
     private val allowedExts = setOf(
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif",
-        "mp4", "mov", "3gp", "m4v"
+        "mp4", "mov", "3gp", "m4v",
+        "mp3", "flac", "m4a", "aac", "ogg", "opus", "wav"
     )
 
     override fun serve(session: IHTTPSession): Response {
@@ -105,6 +107,8 @@ class UploadServer(
         runCatching {
             MediaScannerConnection.scanFile(ctx, arrayOf(dest.absolutePath), null, null)
         }
+        // 只解析刚上传的这一个文件，增量写索引；写完后响应，页面关闭上传框时能立刻查到
+        MediaScanner.indexFile(ctx, dest)
         onUploaded(dest.name)
         return json(ok = true, message = "已保存到 ${dest.absolutePath}", name = dest.name)
     }
@@ -142,34 +146,36 @@ class UploadServer(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#F6F1E7">
 <title>MyTV · 手机传照片</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#0b0f14;color:#f4f7fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:22px 18px 40px}
-h1{font-size:22px;margin:0 0 6px}
-.sub{color:#9aa7b8;font-size:13px;line-height:1.6}
-.card{background:#151b23;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:18px;margin-top:18px}
-.drop{border:2px dashed rgba(78,161,255,.5);border-radius:14px;padding:24px 16px;text-align:center;color:#9aa7b8;font-size:14px}
-.pick{display:block;margin-top:12px;padding:14px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.04)}
-.pick b{display:block;font-size:14px;color:#f4f7fb;font-weight:600}
-.pick input{display:block;width:100%;margin-top:10px;color:#f4f7fb;font-size:14px}
-.chosen{margin-top:12px;color:#9aa7b8;font-size:13px}
-.btn{display:block;width:100%;margin-top:16px;padding:14px;border:0;border-radius:12px;background:#4ea1ff;color:#fff;font-size:16px;font-weight:600}
+body{margin:0;background:#F6F1E7;color:#23272E;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:22px 18px 40px}
+h1{font-size:22px;margin:0 0 6px;color:#23272E}
+.sub{color:#5F6673;font-size:13px;line-height:1.6}
+.card{background:#FFFDF8;border:1px solid #D8D0C0;border-radius:16px;padding:18px;margin-top:18px;box-shadow:0 10px 30px rgba(70,58,40,.08)}
+.drop{border:2px dashed rgba(37,99,235,.35);border-radius:14px;padding:24px 16px;text-align:center;color:#5F6673;font-size:14px;background:#FBF7EE}
+.pick{display:block;margin-top:12px;padding:14px;border:1px solid #D8D0C0;border-radius:12px;background:#FBF7EE}
+.pick b{display:block;font-size:14px;color:#23272E;font-weight:600}
+.pick input{display:block;width:100%;margin-top:10px;color:#23272E;font-size:14px}
+.chosen{margin-top:12px;color:#5F6673;font-size:13px}
+.btn{display:block;width:100%;margin-top:16px;padding:14px;border:0;border-radius:12px;background:#2563EB;color:#fff;font-size:16px;font-weight:600;box-shadow:0 6px 16px rgba(37,99,235,.22)}
 .btn:disabled{opacity:.5}
-.item{margin-top:14px;font-size:13px;color:#9aa7b8}
-.bar{height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden;margin-top:7px}
-.bar>i{display:block;height:100%;width:0;background:#4ea1ff;transition:width .15s}
-.ok{color:#6ee7a8}.err{color:#ff8b9a}
-.path{word-break:break-all;color:#7f8b9c;font-size:12px;margin-top:10px}
+.item{margin-top:14px;font-size:13px;color:#5F6673}
+.bar{height:5px;background:#D8D0C0;border-radius:3px;overflow:hidden;margin-top:7px}
+.bar>i{display:block;height:100%;width:0;background:#2563EB;transition:width .15s}
+.ok{color:#1F7A4D}.err{color:#B42318}
+.path{word-break:break-all;color:#6B7280;font-size:12px;margin-top:10px}
 </style>
 </head>
 <body>
 <h1>手机传照片到电视</h1>
-<div class="sub">照片和视频都可以一次选多个，选好后点「开始上传」，会直接存到电视 U 盘的相册目录。</div>
+<div class="sub">照片、视频和音乐都可以一次选多个，选好后点「开始上传」，会直接存到电视 U 盘的相册目录。</div>
 <div class="card">
   <div class="drop">支持多选 · 上传过程中请保持页面打开</div>
   <label class="pick"><b>选择照片（可多选）</b><input id="photos" type="file" accept="image/*" multiple></label>
   <label class="pick"><b>选择视频（可多选）</b><input id="videos" type="file" accept="video/*" multiple></label>
+  <label class="pick"><b>选择音乐（可多选）</b><input id="audios" type="file" accept="audio/*" multiple></label>
   <div id="chosen" class="chosen">尚未选择文件</div>
   <button id="btn" class="btn">开始上传</button>
   <div class="path">保存目录：$target</div>
@@ -178,6 +184,7 @@ h1{font-size:22px;margin:0 0 6px}
 <script>
 var photoInput = document.getElementById('photos');
 var videoInput = document.getElementById('videos');
+var audioInput = document.getElementById('audios');
 var chosen = document.getElementById('chosen');
 var btn = document.getElementById('btn');
 var list = document.getElementById('list');
@@ -185,7 +192,7 @@ var list = document.getElementById('list');
 function selectedFiles() {
   var files = [];
   var seen = {};
-  [photoInput, videoInput].forEach(function(input) {
+  [photoInput, videoInput, audioInput].forEach(function(input) {
     if (!input.files) return;
     for (var i = 0; i < input.files.length; i++) {
       var f = input.files[i];
@@ -205,6 +212,7 @@ function refreshChosen() {
 
 photoInput.onchange = refreshChosen;
 videoInput.onchange = refreshChosen;
+audioInput.onchange = refreshChosen;
 
 function addItem(name) {
   var div = document.createElement('div');

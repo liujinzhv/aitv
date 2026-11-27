@@ -11,8 +11,8 @@ android {
         applicationId = "com.aitv.launcher"
         minSdk = 26
         targetSdk = 28
-        versionCode = 9
-        versionName = "1.3.5"
+        versionCode = 22
+        versionName = "1.4.8"
     }
 
     buildTypes {
@@ -62,4 +62,16 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("com.google.zxing:core:3.5.2")
 }
+
+
+
+
+
+
+
+
+
+
+

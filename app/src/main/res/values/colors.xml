@@ -8,4 +8,20 @@
     <color name="accent">#4EA1FF</color>
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
+
+    <!-- 非首页（直播 / 相册 / 影视 / 音乐 / 应用 / 设置 / 浏览器 / 下载）浅色主题 -->
+    <color name="cream_bg">#F6F1E7</color>
+    <color name="cream_bg_top">#FFFCF4</color>
+    <color name="cream_bg_bottom">#EFE7D8</color>
+    <color name="cream_panel">#FFFDF8</color>
+    <color name="cream_stroke">#D8D0C0</color>
+    <color name="cream_item">#FBF7EE</color>
+    <color name="light_text">#23272E</color>
+    <color name="light_text_dim">#5F6673</color>
+    <color name="light_text_faint">#565D69</color>
+    <color name="light_accent">#2563EB</color>
+    <color name="light_focus_fill">#DCE8FF</color>
+    <color name="light_selected_fill">#D2E2FF</color>
+    <color name="light_star">#B26B00</color>
+    <color name="light_error">#B42318</color>
 </resources>

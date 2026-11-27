@@ -23,7 +23,7 @@
                 android:id="@+id/btnBack"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_pill"
+                android:background="@drawable/bg_pill_cream"
                 android:clickable="true"
                 android:focusable="true"
                 android:paddingStart="18dp"
@@ -31,7 +31,7 @@
                 android:paddingEnd="18dp"
                 android:paddingBottom="8dp"
                 android:text="返回"
-                android:textColor="@color/text"
+                android:textColor="@color/light_text"
                 android:textSize="13sp" />
 
             <EditText
@@ -51,8 +51,8 @@
                 android:paddingBottom="9dp"
                 android:selectAllOnFocus="true"
                 android:singleLine="true"
-                android:textColor="@color/text"
-                android:textColorHint="@color/text_faint"
+                android:textColor="@color/light_text"
+                android:textColorHint="@color/light_text_faint"
                 android:textSize="14sp" />
 
             <TextView
@@ -60,7 +60,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:background="@drawable/bg_pill"
+                android:background="@drawable/bg_pill_cream"
                 android:clickable="true"
                 android:focusable="true"
                 android:paddingStart="18dp"
@@ -68,7 +68,7 @@
                 android:paddingEnd="18dp"
                 android:paddingBottom="8dp"
                 android:text="打开"
-                android:textColor="@color/text"
+                android:textColor="@color/light_text"
                 android:textSize="13sp" />
 
             <TextView
@@ -76,7 +76,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:background="@drawable/bg_pill"
+                android:background="@drawable/bg_pill_cream"
                 android:clickable="true"
                 android:focusable="true"
                 android:paddingStart="18dp"
@@ -84,7 +84,7 @@
                 android:paddingEnd="18dp"
                 android:paddingBottom="8dp"
                 android:text="收藏"
-                android:textColor="@color/text"
+                android:textColor="@color/light_text"
                 android:textSize="13sp" />
 
             <TextView
@@ -92,7 +92,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:background="@drawable/bg_pill"
+                android:background="@drawable/bg_pill_cream"
                 android:clickable="true"
                 android:focusable="true"
                 android:paddingStart="18dp"
@@ -100,7 +100,7 @@
                 android:paddingEnd="18dp"
                 android:paddingBottom="8dp"
                 android:text="下载"
-                android:textColor="@color/text"
+                android:textColor="@color/light_text"
                 android:textSize="13sp" />
         </LinearLayout>
 
@@ -112,7 +112,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:text=""
-            android:textColor="@color/text_faint"
+            android:textColor="@color/light_text_faint"
             android:textSize="12sp" />
 
         <WebView

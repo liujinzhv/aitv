@@ -1,7 +1,6 @@
 package com.aitv.launcher.ui
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -10,16 +9,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.InputFilter
-import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -35,8 +30,11 @@ import com.aitv.launcher.lock.KioskController
 import com.aitv.launcher.lock.LockController
 import com.aitv.launcher.lock.LockQuestion
 import com.aitv.launcher.lock.LockState
+import com.aitv.launcher.media.ImageLoader
 import com.aitv.launcher.lock.LunarDate
 import com.aitv.launcher.lock.QuestionBank
+import com.aitv.launcher.util.SystemWallpaper
+import com.aitv.launcher.util.WallpaperStore
 import com.aitv.launcher.util.dp
 import com.aitv.launcher.util.focusScale
 import com.aitv.launcher.util.immersive
@@ -90,6 +88,7 @@ class LockScreenActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
 
         LockState.locked = true
+        refreshLockWallpaper()
         buildNumberPad()
         bindActions()
         updateClock()
@@ -101,7 +100,49 @@ class LockScreenActivity : Activity() {
         super.onResume()
         if (!unlocked) {
             player?.play()
+            refreshLockWallpaper()
             if (!kioskEntered) kioskEntered = KioskController.startLock(this)
+        }
+    }
+
+    /** 优先铺应用内壁纸；视频壁纸取一帧静态图，没有时回退系统锁屏壁纸 / 内置背景。 */
+    private fun refreshLockWallpaper() {
+        when (WallpaperStore.kind(this)) {
+            WallpaperStore.Kind.VIDEO -> {
+                binding.lockFallback.visibility = View.VISIBLE
+                binding.lockWallpaper.visibility = View.VISIBLE
+                val width = resources.displayMetrics.widthPixels
+                val height = resources.displayMetrics.heightPixels
+                ImageLoader.loadVideoFrame(
+                    binding.lockWallpaper,
+                    WallpaperStore.videoPath(this),
+                    width,
+                    height,
+                    0L
+                )
+                return
+            }
+            WallpaperStore.Kind.IMAGE -> {
+                binding.lockWallpaper.visibility = View.GONE
+                binding.lockFallback.visibility = View.VISIBLE
+                WallpaperStore.loadInto(this, binding.lockWallpaper) { loaded, _ ->
+                    if (isFinishing || isDestroyed) return@loadInto
+                    if (loaded) {
+                        binding.lockFallback.visibility = View.GONE
+                    } else {
+                        binding.lockFallback.visibility = View.VISIBLE
+                    }
+                }
+                return
+            }
+            WallpaperStore.Kind.NONE -> Unit
+        }
+
+        binding.lockWallpaper.visibility = View.GONE
+        binding.lockFallback.visibility =
+            if (SystemWallpaper.hasWallpaper(this)) View.GONE else View.VISIBLE
+        SystemWallpaper.loadLockInto(this, binding.lockWallpaper) { loaded ->
+            if (loaded) binding.lockFallback.visibility = View.GONE
         }
     }
 
@@ -551,48 +592,13 @@ class LockScreenActivity : Activity() {
     }
 
     private fun showPinDialog() {
-        val input = EditText(this).apply {
-            setText("")
-            hint = "4 位数字"
-            textSize = 22f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            filters = arrayOf(InputFilter.LengthFilter(4))
-            setPadding(dp(16f), dp(10f), dp(16f), dp(10f))
-        }
-        val container = FrameLayout(this).apply {
-            setPadding(dp(28f), dp(8f), dp(28f), 0)
-        }
-        container.addView(
-            input,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("家长解锁")
-            .setMessage("输入 4 位家长密码，可直接解锁电视")
-            .setView(container)
-            .setPositiveButton("解锁", null)
-            .setNegativeButton("取消", null)
-            .create()
-
-        dialog.setOnShowListener {
-            input.requestFocus()
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (input.text.toString().trim() == Prefs.lockPin) {
-                    dialog.dismiss()
-                    unlockSuccess()
-                } else {
-                    input.error = "密码不对"
-                    input.setText("")
-                }
-            }
-        }
-        dialog.show()
+        PinGateDialog(
+            host = this,
+            onSuccess = { unlockSuccess() },
+            onCancel = {},
+            titleText = "家长解锁",
+            subtitleText = "输入 4 位家长密码，可直接解锁电视",
+            cancelText = "取消，返回锁屏"
+        ).show()
     }
 }

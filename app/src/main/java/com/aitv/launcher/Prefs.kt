@@ -141,4 +141,34 @@ object Prefs {
     var lockOnBoot: Boolean
         get() = sp.getBoolean("lock_on_boot", true)
         set(value) = sp.edit().putBoolean("lock_on_boot", value).apply()
+
+    /** 上次从 Gitee 检查发布版本的时间，用于 24 小时节流 */
+    var updateCheckedAt: Long
+        get() = sp.getLong("update_checked_at", 0L)
+        set(value) = sp.edit().putLong("update_checked_at", value).apply()
+
+    /** 正在后台下载的 DownloadManager 任务 id，-1 表示没有 */
+    var pendingDownloadId: Long
+        get() = sp.getLong("pending_download_id", -1L)
+        set(value) = sp.edit().putLong("pending_download_id", value).apply()
+
+    /** 已下载完成、等待拉起系统安装器的 APK 绝对路径 */
+    var pendingApkPath: String
+        get() = sp.getString("pending_apk_path", "").orEmpty()
+        set(value) = sp.edit().putString("pending_apk_path", value).apply()
+
+    /** 最近一次下载完成的 APK 路径，用于给用户提示手动安装 */
+    var lastApkPath: String
+        get() = sp.getString("last_apk_path", "").orEmpty()
+        set(value) = sp.edit().putString("last_apk_path", value).apply()
+
+    /** 拉起安装器时应用的版本号；如果返回后版本没变，说明系统未完成安装 */
+    var installAttemptVersion: String
+        get() = sp.getString("install_attempt_version", "").orEmpty()
+        set(value) = sp.edit().putString("install_attempt_version", value).apply()
+
+    /** 下载完成通知/手动安装提示是否待展示 */
+    var manualInstallNotice: Boolean
+        get() = sp.getBoolean("manual_install_notice", false)
+        set(value) = sp.edit().putBoolean("manual_install_notice", value).apply()
 }

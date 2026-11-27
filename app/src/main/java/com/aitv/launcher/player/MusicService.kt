@@ -7,14 +7,18 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.aitv.launcher.R
+import com.aitv.launcher.media.ImageLoader
 import com.aitv.launcher.ui.MusicActivity
 
 class MusicService : Service() {
+
+    private var iconPath: String? = null
+    private var iconBitmap: Bitmap? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -68,9 +72,8 @@ class MusicService : Service() {
             )
 
         track?.artworkPath?.let { path ->
-            runCatching { BitmapFactory.decodeFile(path) }.getOrNull()?.let { bitmap ->
-                builder.setLargeIcon(bitmap)
-            }
+            val bitmap = notificationArtwork(path)
+            if (bitmap != null) builder.setLargeIcon(bitmap)
         }
 
         builder.addAction(
@@ -113,6 +116,14 @@ class MusicService : Service() {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    /** 通知栏大图标只解 256px，禁止把几 MB 的内嵌封面整张读进内存 */
+    private fun notificationArtwork(path: String): Bitmap? {
+        if (path == iconPath) return iconBitmap
+        iconBitmap = ImageLoader.decode(path, 256, 256)
+        iconPath = path
+        return iconBitmap
     }
 
     companion object {

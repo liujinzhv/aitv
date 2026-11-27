@@ -23,7 +23,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="电视直播"
-                android:textColor="@color/text"
+                android:textColor="@color/light_text"
                 android:textSize="32sp"
                 android:textStyle="bold" />
 
@@ -33,7 +33,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="14dp"
                 android:text=""
-                android:textColor="@color/text_dim"
+                android:textColor="@color/light_text_dim"
                 android:textSize="14sp" />
 
             <Space
@@ -47,7 +47,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="18dp"
                 android:text=""
-                android:textColor="@color/text_dim"
+                android:textColor="@color/light_text_dim"
                 android:textSize="13sp" />
         </LinearLayout>
 
@@ -56,7 +56,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:text="按 OK 播放 · 长按 OK 或菜单键收藏/取消收藏 · 收藏频道自动置顶"
-            android:textColor="@color/text_faint"
+            android:textColor="@color/light_text_faint"
             android:textSize="13sp" />
 
         <androidx.recyclerview.widget.RecyclerView
@@ -66,7 +66,10 @@
             android:layout_marginTop="8dp"
             android:layout_weight="1"
             android:clipToPadding="false"
-            android:paddingBottom="12dp" />
+            android:paddingStart="28dp"
+            android:paddingTop="18dp"
+            android:paddingEnd="28dp"
+            android:paddingBottom="28dp" />
 
         <TextView
             android:id="@+id/emptyText"
@@ -76,7 +79,7 @@
             android:gravity="center"
             android:lineSpacingExtra="6dp"
             android:text="还没有配置直播源\n在「设置 → 直播源」里粘贴 m3u / m3u8 地址"
-            android:textColor="@color/text_dim"
+            android:textColor="@color/light_text_dim"
             android:textSize="18sp"
             android:visibility="gone" />
     </LinearLayout>

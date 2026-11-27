@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.content.ContextCompat
 import com.aitv.launcher.R
 import com.aitv.launcher.databinding.ActivityDownloadBinding
 import com.aitv.launcher.databinding.ItemApkBinding
@@ -18,6 +19,7 @@ import com.aitv.launcher.util.StorageUtils
 import com.aitv.launcher.util.focusScale
 import com.aitv.launcher.util.formatSize
 import com.aitv.launcher.util.immersive
+import com.aitv.launcher.util.lightPageChrome
 import com.aitv.launcher.util.keepScreenOn
 import com.aitv.launcher.util.toast
 import java.text.SimpleDateFormat
@@ -34,6 +36,7 @@ class DownloadActivity : Activity() {
         binding = ActivityDownloadBinding.inflate(layoutInflater)
         setContentView(binding.root)
         immersive()
+        lightPageChrome()
         keepScreenOn()
 
         binding.apkList.layoutManager = LinearLayoutManager(this)
@@ -103,8 +106,8 @@ class ApkAdapter(
         val installed = JptvHelper.isJptv(item.name) && JptvHelper.isInstalled(context)
         holder.action.text = if (installed) "打开" else "安装"
         holder.action.setTextColor(
-            if (JptvHelper.isJptv(item.name)) android.graphics.Color.parseColor("#4EA1FF")
-            else android.graphics.Color.parseColor("#F4F7FB")
+            if (JptvHelper.isJptv(item.name)) ContextCompat.getColor(context, R.color.light_accent)
+            else ContextCompat.getColor(context, R.color.light_text)
         )
         holder.itemView.setOnClickListener { onClick(item) }
     }

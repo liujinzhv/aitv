@@ -64,6 +64,8 @@ docs/demo_assets/
 docs/demo_docs/
 docs/demo_video/
 docs/tv-prefs*.xml
+# 功能说明 PPT 的作者稿目录（本地生成，不入库）
+ppt_assets/
 
 # 直播源配置（含第三方订阅地址，不入库）
 *.m3u

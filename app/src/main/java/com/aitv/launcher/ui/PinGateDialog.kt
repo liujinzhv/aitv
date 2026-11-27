@@ -24,7 +24,10 @@ import com.aitv.launcher.util.focusScale
 class PinGateDialog(
     private val host: Activity,
     private val onSuccess: () -> Unit,
-    private val onCancel: () -> Unit
+    private val onCancel: () -> Unit,
+    private val titleText: String = "家长验证",
+    private val subtitleText: String = "请输入 4 位家长密码，验证后才能修改设置",
+    private val cancelText: String = "取消，返回桌面"
 ) : Dialog(host, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen) {
 
     private var code = ""
@@ -48,7 +51,7 @@ class PinGateDialog(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(ctx.dp(28f), ctx.dp(24f), ctx.dp(28f), ctx.dp(24f))
-            background = ContextCompat.getDrawable(ctx, R.drawable.bg_lock_card)
+            background = ContextCompat.getDrawable(ctx, R.drawable.bg_panel)
         }
         val cardParams = FrameLayout.LayoutParams(
             ctx.dp(560f),
@@ -57,15 +60,15 @@ class PinGateDialog(
         root.addView(card, cardParams)
 
         card.addView(TextView(ctx).apply {
-            text = "家长验证"
+            text = titleText
             textSize = 26f
-            setTextColor(ContextCompat.getColor(ctx, R.color.text))
+            setTextColor(ContextCompat.getColor(ctx, R.color.light_text))
             gravity = Gravity.CENTER
         })
         card.addView(TextView(ctx).apply {
-            text = "请输入 4 位家长密码，验证后才能修改设置"
+            text = subtitleText
             textSize = 15f
-            setTextColor(ContextCompat.getColor(ctx, R.color.text_dim))
+            setTextColor(ContextCompat.getColor(ctx, R.color.light_text_dim))
             gravity = Gravity.CENTER
             setPadding(0, ctx.dp(8f), 0, 0)
         })
@@ -79,8 +82,8 @@ class PinGateDialog(
             val dot = TextView(ctx).apply {
                 gravity = Gravity.CENTER
                 textSize = 24f
-                setTextColor(ContextCompat.getColor(ctx, R.color.text))
-                background = ContextCompat.getDrawable(ctx, R.drawable.bg_lock_input)
+                setTextColor(ContextCompat.getColor(ctx, R.color.light_text))
+                background = ContextCompat.getDrawable(ctx, R.drawable.bg_pin_input_cream)
                 isFocusable = false
             }
             val lp = LinearLayout.LayoutParams(ctx.dp(56f), ctx.dp(60f))
@@ -93,7 +96,7 @@ class PinGateDialog(
         errorView = TextView(ctx).apply {
             text = ""
             textSize = 14f
-            setTextColor(0xFFFF8A80.toInt())
+            setTextColor(ContextCompat.getColor(ctx, R.color.light_error))
             gravity = Gravity.CENTER
             minHeight = ctx.dp(22f)
         }
@@ -110,9 +113,9 @@ class PinGateDialog(
             val key = TextView(ctx).apply {
                 text = label
                 textSize = if (label.length > 1) 17f else 23f
-                setTextColor(ContextCompat.getColor(ctx, if (label == "清空" || label == "删除") R.color.text_dim else R.color.text))
+                setTextColor(ContextCompat.getColor(ctx, if (label == "清空" || label == "删除") R.color.light_text_dim else R.color.light_text))
                 gravity = Gravity.CENTER
-                background = ContextCompat.getDrawable(ctx, R.drawable.bg_lock_action)
+                background = ContextCompat.getDrawable(ctx, R.drawable.bg_pin_key_cream)
                 isFocusable = true
                 isFocusableInTouchMode = true
                 isClickable = true
@@ -138,11 +141,11 @@ class PinGateDialog(
         )
 
         val cancel = TextView(ctx).apply {
-            text = "取消，返回桌面"
+            text = cancelText
             textSize = 18f
-            setTextColor(ContextCompat.getColor(ctx, R.color.text_dim))
+            setTextColor(ContextCompat.getColor(ctx, R.color.light_text_dim))
             gravity = Gravity.CENTER
-            background = ContextCompat.getDrawable(ctx, R.drawable.bg_lock_action)
+            background = ContextCompat.getDrawable(ctx, R.drawable.bg_pin_key_cream)
             isFocusable = true
             isFocusableInTouchMode = true
             isClickable = true
@@ -161,8 +164,21 @@ class PinGateDialog(
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setDimAmount(0.78f)
+            setDimAmount(0.42f)
+            val cream = ContextCompat.getColor(ctx, R.color.cream_bg)
+            navigationBarColor = cream
+            statusBarColor = cream
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                isNavigationBarContrastEnforced = false
+            }
         }
+        root.systemUiVisibility = (
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            )
         setCanceledOnTouchOutside(false)
         setOnCancelListener {
             onCancel()

@@ -2,8 +2,10 @@ package com.aitv.launcher.launcher
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
+import android.net.Uri
 
 data class AppEntry(
     val label: String,
@@ -76,5 +78,36 @@ object AppRepo {
         } catch (t: Throwable) {
             false
         }
+    }
+
+    /** 系统预装且没有更新过的应用不允许普通应用卸载；其余交给系统卸载器确认。 */
+    fun canUninstall(ctx: Context, pkg: String): Boolean {
+        val pm = ctx.packageManager
+        return try {
+            val info = pm.getApplicationInfo(pkg, 0)
+            val system = info.flags and ApplicationInfo.FLAG_SYSTEM != 0
+            val updatedSystem = info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+            if (system && !updatedSystem) return false
+            pm.resolveActivity(uninstallIntent(pkg), 0) != null
+        } catch (t: Throwable) {
+            false
+        }
+    }
+
+    fun isSystemApp(ctx: Context, pkg: String): Boolean = try {
+        val info = ctx.packageManager.getApplicationInfo(pkg, 0)
+        info.flags and ApplicationInfo.FLAG_SYSTEM != 0
+    } catch (t: Throwable) {
+        false
+    }
+
+    fun uninstallIntent(pkg: String): Intent =
+        Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg"))
+
+    fun uninstall(ctx: Context, pkg: String): Boolean = try {
+        ctx.startActivity(uninstallIntent(pkg))
+        true
+    } catch (t: Throwable) {
+        false
     }
 }

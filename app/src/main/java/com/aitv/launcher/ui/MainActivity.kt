@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,17 +13,20 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
+import android.view.WindowManager
 import android.widget.LinearLayout
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.aitv.launcher.Prefs
 import com.aitv.launcher.R
 import com.aitv.launcher.databinding.ActivityMainBinding
 import com.aitv.launcher.databinding.ViewFeatureCardBinding
-import com.aitv.launcher.media.ImageLoader
-import com.aitv.launcher.media.LiveRepo
+import com.aitv.launcher.update.UpdateDownloader
+import com.aitv.launcher.update.UpdatePrompt
+import com.aitv.launcher.util.SystemWallpaper
+import com.aitv.launcher.util.WallpaperStore
 import com.aitv.launcher.util.dp
 import com.aitv.launcher.util.featureCardBackground
 import com.aitv.launcher.util.focusScale
@@ -31,8 +36,8 @@ import com.aitv.launcher.util.toast
 import com.aitv.launcher.weather.WeatherInfo
 import com.aitv.launcher.weather.WeatherRepo
 import android.icu.util.ChineseCalendar
-import java.io.File
 import java.text.SimpleDateFormat
+import java.io.File
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -41,10 +46,15 @@ class MainActivity : Activity() {
 
     private lateinit var binding: ActivityMainBinding
     private val handler = Handler(Looper.getMainLooper())
-
-    private var wallPlayer: ExoPlayer? = null
-    private var wallVideoPath: String? = null
     private var weatherFreshAt: Long = 0L
+    private var lightHome = false
+    private var wallpaperPlayer: ExoPlayer? = null
+    private var playingWallpaperPath = ""
+
+    /** 首页启动 2.5 秒后从 Gitee 查一次发布版本，避免和首屏渲染抢资源 */
+    private val updateCheckTick = Runnable {
+        if (!isFinishing && !isDestroyed) UpdatePrompt.autoCheck(this)
+    }
 
     private val clockTick = object : Runnable {
         override fun run() {
@@ -55,6 +65,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 以桌面身份透出系统壁纸：静态和动态壁纸都由系统自己绘制，更换后自动同步
+        window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -63,9 +76,7 @@ class MainActivity : Activity() {
         requestStoragePermission()
 
         updateClock()
-        setupWallpaper()
         buildFeatureCards()
-
         binding.featureRow.post {
             binding.featureRow.getChildAt(0)?.requestFocus()
         }
@@ -77,18 +88,25 @@ class MainActivity : Activity() {
         handler.post(clockTick)
         updateWeather(force = false)
         setupWallpaper()
-        wallPlayer?.play()
+        val manualInstall = UpdateDownloader.checkInstallResult(this)
+        UpdateDownloader.installIfReady(this)
+        if (manualInstall || Prefs.pendingApkPath.isNotBlank()) return
+        handler.removeCallbacks(updateCheckTick)
+        handler.postDelayed(updateCheckTick, 2500L)
     }
 
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(clockTick)
-        wallPlayer?.pause()
+        handler.removeCallbacks(updateCheckTick)
+        // 电视只有有限路硬解：进视频/相册前必须把壁纸播放器连同解码器一起释放，
+        // 只 pause 仍占着 MediaCodec，再开播放器会卡在 5 秒左右无法继续解码。
+        releaseVideoWallpaper()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        releaseWallPlayer()
+        releaseVideoWallpaper()
         super.onDestroy()
     }
 
@@ -179,63 +197,141 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 首页壁纸优先使用应用内图片 / 视频；没有时才回退系统壁纸或内置深色兜底。
+     * 这台电视没有系统 wallpaper 服务，不能依赖 WallpaperManager。
+     */
     private fun setupWallpaper() {
-        val path = Prefs.wallpaper.trim()
-        val file = if (path.isNotEmpty()) File(path) else null
-        if (file == null || !file.exists() || file.length() <= 0) {
-            releaseWallPlayer()
-            binding.wallpaperPlayer.visibility = View.GONE
-            binding.homeWallpaperImage.visibility = View.VISIBLE
-            binding.bgLayer.visibility = View.GONE
-            applyWallpaperImage()
-            return
+        binding.wallpaperPlayer.visibility = View.GONE
+        binding.homeScrim.visibility = View.VISIBLE
+
+        when (WallpaperStore.kind(this)) {
+            WallpaperStore.Kind.VIDEO -> {
+                binding.homeWallpaperImage.setImageDrawable(null)
+                binding.homeWallpaperImage.visibility = View.GONE
+                binding.bgLayer.visibility = View.GONE
+                applyHomeTone(false)
+                playVideoWallpaper(WallpaperStore.videoPath(this))
+                return
+            }
+            WallpaperStore.Kind.IMAGE -> {
+                releaseVideoWallpaper()
+                binding.homeWallpaperImage.visibility = View.GONE
+                binding.bgLayer.visibility = View.VISIBLE
+                WallpaperStore.loadInto(this, binding.homeWallpaperImage) { loaded, luminance ->
+                    if (isFinishing || isDestroyed) return@loadInto
+                    if (loaded) {
+                        binding.bgLayer.visibility = View.GONE
+                        applyHomeTone(luminance >= 0.60f)
+                    } else {
+                        binding.bgLayer.visibility = View.VISIBLE
+                        applyHomeTone(false)
+                    }
+                }
+                return
+            }
+            WallpaperStore.Kind.NONE -> Unit
         }
 
-        if (wallPlayer != null && wallVideoPath == path) {
-            binding.wallpaperPlayer.visibility = View.VISIBLE
-            binding.homeWallpaperImage.visibility = View.GONE
-            binding.bgLayer.visibility = View.GONE
-            return
-        }
-
-        releaseWallPlayer()
-        binding.wallpaperPlayer.visibility = View.VISIBLE
+        releaseVideoWallpaper()
+        binding.homeWallpaperImage.setImageDrawable(null)
         binding.homeWallpaperImage.visibility = View.GONE
-        binding.bgLayer.visibility = View.GONE
+        val hasSystemWallpaper = SystemWallpaper.hasWallpaper(this)
+        binding.bgLayer.visibility =
+            if (hasSystemWallpaper) View.GONE else View.VISIBLE
 
-        val player = ExoPlayer.Builder(this).build()
-        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
-        player.repeatMode = Player.REPEAT_MODE_ONE
-        player.volume = 0f
+        // 首页文字颜色跟着壁纸整体亮度走：亮壁纸用黑字，暗壁纸用白字。
+        val lightBackground = hasSystemWallpaper &&
+            SystemWallpaper.averageLuminance(this) >= 0.60f
+        applyHomeTone(lightBackground)
+    }
+
+    /** 首页视频壁纸：本地文件静音播放，单曲循环，不显示播放器控件。 */
+    private fun playVideoWallpaper(path: String) {
+        val file = File(path)
+        if (!file.isFile || file.length() <= 0) {
+            WallpaperStore.clear(this)
+            binding.wallpaperPlayer.visibility = View.GONE
+            binding.bgLayer.visibility = View.VISIBLE
+            applyHomeTone(false)
+            toast("视频壁纸文件不存在，已恢复默认背景")
+            return
+        }
+        binding.wallpaperPlayer.visibility = View.VISIBLE
+        val player = wallpaperPlayer ?: ExoPlayer.Builder(this).build().also { p ->
+            p.volume = 0f
+            p.repeatMode = Player.REPEAT_MODE_ONE
+            p.playWhenReady = true
+            binding.wallpaperPlayer.player = p
+            p.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    handler.post {
+                        if (isFinishing || isDestroyed) return@post
+                        WallpaperStore.clear(this@MainActivity)
+                        releaseVideoWallpaper()
+                        binding.bgLayer.visibility = View.VISIBLE
+                        applyHomeTone(false)
+                        toast("视频壁纸无法播放，已恢复默认背景")
+                    }
+                }
+            })
+            wallpaperPlayer = p
+        }
+        val absolutePath = file.absolutePath
+        if (playingWallpaperPath != absolutePath) {
+            player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+            player.prepare()
+            playingWallpaperPath = absolutePath
+        }
         player.playWhenReady = true
-        player.prepare()
-        binding.wallpaperPlayer.player = player
-        wallPlayer = player
-        wallVideoPath = path
+        player.play()
     }
 
-    private fun applyWallpaperImage() {
-        val custom = File(Prefs.wallpaperImage)
-        if (Prefs.wallpaperImage.isNotBlank() && custom.exists() && custom.length() > 0) {
-            ImageLoader.loadFile(
-                binding.homeWallpaperImage,
-                custom.absolutePath,
-                resources.displayMetrics.widthPixels,
-                resources.displayMetrics.heightPixels
-            )
-        } else {
-            binding.homeWallpaperImage.setImageResource(R.drawable.home_reunion)
-        }
-    }
-
-    private fun releaseWallPlayer() {
-        wallPlayer?.let {
-            it.stop()
-            it.release()
-        }
-        wallPlayer = null
-        wallVideoPath = null
+    private fun releaseVideoWallpaper() {
+        val player = wallpaperPlayer ?: return
+        binding.wallpaperPlayer.visibility = View.GONE
         binding.wallpaperPlayer.player = null
+        player.release()
+        wallpaperPlayer = null
+        playingWallpaperPath = ""
+    }
+
+    /** 首页不固定深色文字：按壁纸平均亮度切换白 / 黑，并同步遮罩和天气图标。 */
+    private fun applyHomeTone(light: Boolean) {
+        lightHome = light
+        val primary = if (light) 0xFF11151B.toInt() else getColor(R.color.text)
+        val dim = if (light) 0xFF3F4650.toInt() else getColor(R.color.text_dim)
+        val faint = if (light) 0xFF66707C.toInt() else getColor(R.color.text_faint)
+        val accent = if (light) 0xFF1D4ED8.toInt() else getColor(R.color.accent)
+        val glow = if (light) 0x66FFFFFF else 0x99000000.toInt()
+        val shadow = if (light) 0x99FFFFFF.toInt() else 0x99000000.toInt()
+
+        binding.homeScrim.setBackgroundResource(
+            if (light) R.drawable.bg_home_scrim_light else R.drawable.bg_home_scrim
+        )
+        binding.weatherCard.background = null
+
+        binding.clockText.setTextColor(primary)
+        binding.clockText.setShadowLayer(dp(12f).toFloat(), 0f, dp(3f).toFloat(), glow)
+        binding.dateText.setTextColor(dim)
+        binding.dateText.setShadowLayer(dp(9f).toFloat(), 0f, dp(2f).toFloat(), glow)
+        binding.greetingText.setTextColor(faint)
+        binding.greetingText.setShadowLayer(dp(9f).toFloat(), 0f, dp(2f).toFloat(), glow)
+
+        binding.weatherTemp.setTextColor(primary)
+        binding.weatherTemp.setShadowLayer(dp(8f).toFloat(), 0f, dp(2f).toFloat(), shadow)
+        binding.weatherDesc.setTextColor(dim)
+        binding.weatherDesc.setShadowLayer(dp(8f).toFloat(), 0f, dp(2f).toFloat(), shadow)
+        binding.weatherCity.setTextColor(faint)
+        binding.weatherCity.setShadowLayer(dp(8f).toFloat(), 0f, dp(2f).toFloat(), shadow)
+        binding.weatherIcon.setColorFilter(accent)
+
+        // 亮壁纸时白色焦点描边会看不见，卡片改用深色描边。
+        for (i in 0 until binding.featureRow.childCount) {
+            val card = binding.featureRow.getChildAt(i)
+            val colors = card.tag as? IntArray ?: continue
+            card.background = featureCardBackground(this, colors[0], colors[1], light)
+        }
     }
 
     private fun buildFeatureCards() {
@@ -275,7 +371,7 @@ class MainActivity : Activity() {
     ) {
         val view = layoutInflater.inflate(R.layout.view_feature_card, binding.featureRow, false)
         val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-            setMargins(dp(6f), 0, dp(6f), 0)
+            setMargins(dp(12f), dp(10f), dp(12f), dp(10f))
         }
         view.layoutParams = lp
 
@@ -283,7 +379,8 @@ class MainActivity : Activity() {
         card.cardIcon.setImageResource(iconRes)
         card.cardTitle.text = title
 
-        view.background = featureCardBackground(this, color1, color2)
+        view.background = featureCardBackground(this, color1, color2, lightHome)
+        view.tag = intArrayOf(color1, color2)
         view.focusScale(1.06f)
         view.setOnClickListener { onClick() }
 

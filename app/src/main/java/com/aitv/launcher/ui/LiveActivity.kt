@@ -21,6 +21,7 @@ import com.aitv.launcher.model.LiveChannel
 import com.aitv.launcher.util.dp
 import com.aitv.launcher.util.focusScale
 import com.aitv.launcher.util.immersive
+import com.aitv.launcher.util.lightPageChrome
 import com.aitv.launcher.util.keepScreenOn
 
 /**
@@ -39,6 +40,7 @@ class LiveActivity : Activity() {
         binding = ActivityLiveBinding.inflate(layoutInflater)
         setContentView(binding.root)
         immersive()
+        lightPageChrome()
         keepScreenOn()
 
         adapter = LiveWallAdapter(
@@ -59,9 +61,9 @@ class LiveActivity : Activity() {
 
         val cached = LiveRepo.cached()
         if (cached.isNotEmpty()) {
-            render(cached, "已加载本地缓存 · 正在刷新直播源")
+            // 频道已落 SQLite，打开页面直接渲染，不重新解析直播源；设置里改了源才全量刷新
+            render(cached, "已加载本地频道 · ${cached.size} 个频道")
             cacheLogos(cached)
-            refresh(force = false)
         } else if (!LiveRepo.hasSources()) {
             showEmpty("还没有配置直播源", true)
         } else {
@@ -273,7 +275,7 @@ class LiveWallAdapter(
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val rows = mutableListOf<LiveWallRow>()
-    private val accent = ColorStateList.valueOf(0xFF4EA1FF.toInt())
+    private val accent = ColorStateList.valueOf(0xFF2563EB.toInt())
     private var favoriteUrls: Set<String> = emptySet()
 
     /** 最近一次播放的频道，回到频道墙后保持选中效果 */

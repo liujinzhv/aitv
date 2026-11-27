@@ -2,6 +2,7 @@ package com.aitv.launcher
 
 import android.app.Activity
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.util.Log
 import com.aitv.launcher.lock.KioskController
 import com.aitv.launcher.lock.LockController
 import com.aitv.launcher.lock.LockState
+import com.aitv.launcher.media.ImageLoader
 import com.aitv.launcher.ui.LockScreenActivity
 import com.aitv.launcher.util.SelectionFx
 
@@ -31,8 +33,7 @@ class App : Application() {
         super.onCreate()
         instance = this
         KioskController.prepare(this)
-        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, savedInstanceState: android.os.Bundle?) = Unit
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {            override fun onActivityCreated(activity: Activity, savedInstanceState: android.os.Bundle?) = Unit
 
             override fun onActivityStarted(activity: Activity) = Unit
 
@@ -71,6 +72,19 @@ class App : Application() {
 
     /** 任意自家页面是否在前台：开机兜底闹钟用它判断「用户已经在用了，别再抢前台」 */
     fun hasVisibleUi(): Boolean = resumedActivity != null
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        ImageLoader.trimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            App.log("trim memory level=$level")
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        ImageLoader.clear()
+    }
 
     companion object {
         private const val LOCK_CHECK_INTERVAL = 15_000L

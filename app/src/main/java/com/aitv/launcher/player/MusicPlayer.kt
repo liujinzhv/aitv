@@ -106,6 +106,14 @@ object MusicPlayer {
         notifyChanged()
     }
 
+    /** 懒加载标签补全后，把当前队列里的同一首歌换成带封面/时长的版本 */
+    fun updateTrack(track: AudioTrack) {
+        val index = playlist.indexOfFirst { it.path == track.path }
+        if (index < 0) return
+        playlist = playlist.toMutableList().also { it[index] = track }
+        notifyChanged()
+    }
+
     fun toggle(ctx: Context) {
         val exo = player
         if (exo == null) {

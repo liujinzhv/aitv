@@ -19,9 +19,11 @@ import com.aitv.launcher.media.ImageLoader
 import com.aitv.launcher.media.MediaScanner
 import com.aitv.launcher.model.PhotoItem
 import com.aitv.launcher.util.Async
+import com.aitv.launcher.util.WallpaperStore
 import com.aitv.launcher.util.dp
 import com.aitv.launcher.util.focusScale
 import com.aitv.launcher.util.immersive
+import com.aitv.launcher.util.lightPageChrome
 import com.aitv.launcher.util.keepScreenOn
 import com.aitv.launcher.util.photoPathText
 import com.aitv.launcher.util.toast
@@ -35,14 +37,24 @@ class GalleryActivity : Activity() {
 
     private lateinit var binding: ActivityGalleryBinding
     private var loadedOnce = false
+    private var loadedGeneration = 0L
     private var deleteDialogShowing = false
+    private var pickWallpaper = false
+    private var applyingWallpaper = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityGalleryBinding.inflate(layoutInflater)
         setContentView(binding.root)
         immersive()
+        lightPageChrome()
         keepScreenOn()
+
+        pickWallpaper = intent.getBooleanExtra(EXTRA_PICK_WALLPAPER, false)
+        if (pickWallpaper) {
+            binding.titleText.text = "选择壁纸"
+            binding.emptyText.text = "相册还是空的\n先扫码上传一张照片，再来选择壁纸"
+        }
 
         val grid = GridLayoutManager(this, 6)
         grid.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
@@ -52,35 +64,48 @@ class GalleryActivity : Activity() {
             }
         }
         binding.photoGrid.layoutManager = grid
+        binding.photoGrid.setHasFixedSize(true)
+        binding.photoGrid.itemAnimator = null
         binding.btnUpload.setOnClickListener {
-            startActivity(Intent(this, UploadActivity::class.java))
+            QrUploadDialog(this) { load(force = true) }.show()
         }
         load(force = false)
     }
 
     override fun onResume() {
         super.onResume()
-        if (loadedOnce) load(force = true)
+        // 只在删除/上传等真正改动过媒体库后重扫；从大图返回不再触发全盘扫描
+        if (loadedOnce && loadedGeneration != MediaScanner.generation) load(force = true)
     }
 
     private fun load(force: Boolean) {
         binding.countText.text = "扫描中…"
-        binding.pathText.text = "按拍摄日期排列 · 按 OK 查看 · 按菜单键删除\n上传目录：" + photoPathText(this)
+        binding.pathText.text = if (pickWallpaper) {
+            "选择一张照片作为桌面 / 智慧锁屏壁纸\n按 OK 直接应用 · 按返回键取消"
+        } else {
+            "按拍摄日期排列 · 按 OK 查看 · 按菜单键删除\n上传目录：" + photoPathText(this)
+        }
+        val generation = MediaScanner.generation
         Async.io {
             val list = MediaScanner.photos(this, force)
             val entries = buildEntries(list)
             runOnUiThread {
                 loadedOnce = true
+                loadedGeneration = generation
                 binding.countText.text = "${list.size} 张"
                 binding.emptyText.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
                 binding.photoGrid.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
                 binding.photoGrid.adapter = GalleryAdapter(entries, { photo ->
-                    startActivity(
-                        Intent(this, PhotoViewActivity::class.java)
-                            .putExtra(PhotoViewActivity.EXTRA_PATH, photo.path)
-                    )
+                    if (pickWallpaper) {
+                        applyWallpaper(photo)
+                    } else {
+                        startActivity(
+                            Intent(this, PhotoViewActivity::class.java)
+                                .putExtra(PhotoViewActivity.EXTRA_PATH, photo.path)
+                        )
+                    }
                 }, { photo ->
-                    confirmDelete(photo)
+                    if (!pickWallpaper) confirmDelete(photo)
                 })
                 binding.photoGrid.postDelayed({
                     for (index in 0 until binding.photoGrid.childCount) {
@@ -88,6 +113,25 @@ class GalleryActivity : Activity() {
                         if (child.isFocusable && child.requestFocus()) return@postDelayed
                     }
                 }, 250)
+            }
+        }
+    }
+
+    private fun applyWallpaper(photo: PhotoItem) {
+        if (applyingWallpaper) return
+        applyingWallpaper = true
+        toast("正在应用壁纸…")
+        Async.io {
+            val ok = WallpaperStore.setImageFromFile(this, File(photo.path))
+            runOnUiThread {
+                applyingWallpaper = false
+                if (ok) {
+                    toast("已设为桌面和智慧锁屏壁纸")
+                    setResult(RESULT_OK)
+                    finish()
+                } else {
+                    toast("设置失败，请换一张图片试试")
+                }
             }
         }
     }
@@ -118,7 +162,7 @@ class GalleryActivity : Activity() {
             }
             runOnUiThread {
                 if (deleted) {
-                    MediaScanner.invalidate()
+                    MediaScanner.removePath(photo.path)
                     toast("已删除照片")
                     load(force = true)
                 } else {
@@ -151,6 +195,10 @@ class GalleryActivity : Activity() {
             group.forEach { entries.add(GalleryEntry.Photo(it)) }
         }
         return entries
+    }
+
+    companion object {
+        const val EXTRA_PICK_WALLPAPER = "pick_wallpaper"
     }
 }
 
@@ -192,6 +240,11 @@ class GalleryAdapter(
     }
 
     override fun getItemCount(): Int = entries.size
+
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        if (holder is PhotoVH) ImageLoader.cancel(holder.photo)
+        super.onViewRecycled(holder)
+    }
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val entry = entries[position]) {

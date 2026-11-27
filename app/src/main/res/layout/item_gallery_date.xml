@@ -8,6 +8,6 @@
     android:paddingEnd="8dp"
     android:paddingBottom="6dp"
     android:text="2024年1月1日"
-    android:textColor="@color/text_dim"
+    android:textColor="@color/light_text_dim"
     android:textSize="15sp"
     android:textStyle="bold" />

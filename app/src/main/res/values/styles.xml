@@ -11,6 +11,44 @@
         <item name="android:statusBarColor">@color/bg</item>
     </style>
 
+    <!-- 首页：透出系统桌面壁纸 / 动态壁纸，文字区域由半透明遮罩保证可读 -->
+    <style name="HomeTheme" parent="AppTheme">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+    </style>
+
+    <!-- 锁屏也用透出壁纸的窗口，静态锁屏壁纸再以图片层叠上去 -->
+    <style name="LockTheme" parent="AppTheme">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+    </style>
+
+    <style name="LightDialogTheme" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog_cream</item>
+        <item name="android:colorAccent">@color/light_accent</item>
+        <item name="android:textColorPrimary">@color/light_text</item>
+        <item name="android:textColorSecondary">@color/light_text_dim</item>
+        <item name="android:navigationBarColor">@color/cream_bg</item>
+        <item name="android:navigationBarDividerColor">@color/cream_bg</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="LightPageTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/cream_bg</item>
+        <item name="android:colorAccent">@color/light_accent</item>
+        <item name="android:alertDialogTheme">@style/LightDialogTheme</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentTransitions">true</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:navigationBarColor">@color/cream_bg</item>
+        <item name="android:statusBarColor">@color/cream_bg</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorBackground">@color/cream_bg</item>
+    </style>
+
     <style name="PlayerTheme" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/black</item>
         <item name="android:windowFullscreen">true</item>
