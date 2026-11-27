@@ -11,8 +11,8 @@ android {
         applicationId = "com.aitv.launcher"
         minSdk = 26
         targetSdk = 28
-        versionCode = 22
-        versionName = "1.4.8"
+        versionCode = 23
+        versionName = "1.4.9"
     }
 
     buildTypes {

@@ -69,7 +69,7 @@ INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES: disable install launcher app not
 adb install -r app-tvapp.apk
 ```
 
-- 包名 `com.aitv.launcher.tvapp`，版本名 `1.4.8-tvapp`，显示名称仍是「智慧家庭TV」；
+- 包名 `com.aitv.launcher.tvapp`，版本名 `1.4.9-tvapp`，显示名称仍是「智慧家庭TV」；
 - 可从电视「全部应用」手动打开，功能完整（含锁屏与上传）；
 - 不能设为默认桌面，按 Home 仍回电视自带桌面；设置里的「开机进入 智慧家庭TV」会提示当前安装包没有桌面入口。
 
