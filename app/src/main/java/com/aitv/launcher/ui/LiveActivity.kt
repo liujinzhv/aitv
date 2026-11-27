@@ -211,22 +211,25 @@ class LiveActivity : Activity() {
     private fun cacheLogos(list: List<LiveChannel>) {
         if (logoJobStarted || list.none { !it.logo.isNullOrBlank() }) return
         logoJobStarted = true
-        var lastNotified = 0
+        var lastRefresh = 0L
         LiveRepo.cacheLogos(
             list,
             onProgress = { done, total ->
                 runOnUiThread {
                     binding.statusText.text = "台标缓存 $done / $total"
-                    if (done == total || done - lastNotified >= 24) {
-                        lastNotified = done
-                        adapter.refreshLogos()
+                    val now = System.currentTimeMillis()
+                    if (done == total || now - lastRefresh >= 1000) {
+                        lastRefresh = now
+                        // 只刷新屏幕上看得见的格子，几千个频道时全量 notify 会把整页重绑一遍
+                        adapter.refreshVisibleLogos(binding.channelGrid)
                     }
                 }
             },
             onDone = {
                 runOnUiThread {
+                    logoJobStarted = false
                     binding.statusText.text = "频道与台标已缓存 · 共 ${list.size} 个频道"
-                    adapter.refreshLogos()
+                    adapter.refreshVisibleLogos(binding.channelGrid)
                 }
             }
         )
@@ -296,9 +299,13 @@ class LiveWallAdapter(
         return 0
     }
 
-    fun refreshLogos() {
-        for (index in rows.indices) {
-            val row = rows[index]
+    fun refreshVisibleLogos(recycler: RecyclerView?) {
+        val layoutManager = recycler?.layoutManager as? GridLayoutManager ?: return
+        val first = layoutManager.findFirstVisibleItemPosition()
+        val last = layoutManager.findLastVisibleItemPosition()
+        if (first == RecyclerView.NO_POSITION || last == RecyclerView.NO_POSITION) return
+        for (index in first..last) {
+            val row = rows.getOrNull(index) ?: continue
             if (row is LiveWallRow.Channel && LiveRepo.hasLogo(row.channel)) {
                 notifyItemChanged(index)
             }

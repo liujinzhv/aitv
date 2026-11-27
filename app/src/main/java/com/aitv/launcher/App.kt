@@ -69,6 +69,9 @@ class App : Application() {
         })
     }
 
+    /** 任意自家页面是否在前台：开机兜底闹钟用它判断「用户已经在用了，别再抢前台」 */
+    fun hasVisibleUi(): Boolean = resumedActivity != null
+
     companion object {
         private const val LOCK_CHECK_INTERVAL = 15_000L
         private lateinit var instance: App
@@ -79,5 +82,7 @@ class App : Application() {
         fun log(msg: String) = Log.d("MyTV", msg)
 
         fun logWarn(msg: String, t: Throwable? = null) = Log.w("MyTV", msg, t)
+
+        fun isUiVisible(): Boolean = runCatching { instance.hasVisibleUi() }.getOrDefault(false)
     }
 }

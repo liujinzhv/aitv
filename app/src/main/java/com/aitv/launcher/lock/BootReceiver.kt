@@ -69,6 +69,10 @@ class BootReceiver : BroadcastReceiver() {
             MainActivity::class.java
         }
         val attempt = intent.getIntExtra(EXTRA_ATTEMPT, 1)
+        if (App.isUiVisible()) {
+            App.log("开机兜底闹钟：已有前台页面，停止拉起")
+            return
+        }
         App.log("开机兜底闹钟第 $attempt 次拉起 ${target.simpleName}")
         launch(app, target)
         scheduleAlarm(app, target, attempt = attempt + 1, afterMs = ALARM_NEXT_DELAY_MS)
@@ -86,6 +90,12 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun launch(context: Context, cls: Class<*>) {
+        // 用户已经在用（首页/直播墙/播放器在前台）就不要再把 MainActivity 拉到最前，
+        // 否则大源加载稍慢时会被误当成「应用自己重启」。
+        if (App.isUiVisible()) {
+            App.log("已有前台页面，跳过拉起 ${cls.simpleName}")
+            return
+        }
         try {
             val intent = Intent(context, cls).addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or

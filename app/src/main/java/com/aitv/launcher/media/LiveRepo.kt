@@ -23,8 +23,18 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object LiveRepo {
 
-    private const val MAX_LOGOS = 400
-    private const val MAX_LOGO_BYTES = 4 * 1024 * 1024
+    /** 单次补齐的台标数量上限：几千频道的源里挨个下载会把网络和内存一起拖垮 */
+    private const val MAX_LOGOS = 240
+    private const val MAX_LOGO_BYTES = 2 * 1024 * 1024
+
+    /** 同一个站点连续失败这么多次后，本次不再尝试它下面的台标 */
+    private const val HOST_FAIL_LIMIT = 3
+
+    /** 内存里保留一份解析结果，避免反复解析大 JSON */
+    @Volatile
+    private var memCache: List<LiveChannel>? = null
+
+    private val inFlight = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS)
@@ -36,7 +46,8 @@ object LiveRepo {
         get() = File(App.ctx.filesDir, "live_logos").apply { mkdirs() }
 
     fun cached(): List<LiveChannel> {
-        return try {
+        memCache?.let { return it }
+        val parsed = try {
             val array = JSONArray(Prefs.liveChannels)
             buildList {
                 for (i in 0 until array.length()) {
@@ -58,6 +69,8 @@ object LiveRepo {
         } catch (t: Throwable) {
             emptyList()
         }
+        memCache = parsed
+        return parsed
     }
 
     fun lastUpdated(): Long = Prefs.liveChannelsAt
@@ -142,18 +155,52 @@ object LiveRepo {
     }
 
     fun save(channels: List<LiveChannel>) {
-        val array = JSONArray()
+        // 手工拼 JSON：几千频道时 JSONObject/JSONArray 的中间对象比结果字符串还大，
+        // 在低内存电视上很容易触发 OOM 而被系统杀掉进程。
+        val sb = StringBuilder(channels.size * 96)
+        sb.append('[')
         for ((position, channel) in channels.withIndex()) {
-            val obj = JSONObject()
-            obj.put("name", channel.name)
-            obj.put("url", channel.url)
-            obj.put("group", channel.group)
-            obj.put("logo", channel.logo ?: "")
-            obj.put("index", channel.index.takeIf { it > 0 } ?: position)
-            array.put(obj)
+            if (position > 0) sb.append(',')
+            sb.append('{')
+            sb.field("name", channel.name, true)
+            sb.field("url", channel.url, false)
+            sb.field("group", channel.group, false)
+            sb.field("logo", channel.logo ?: "", false)
+            sb.append(",\"index\":").append(channel.index.takeIf { it > 0 } ?: position)
+            sb.append('}')
         }
-        Prefs.liveChannels = array.toString()
+        sb.append(']')
+        memCache = channels
+        Prefs.liveChannels = sb.toString()
         Prefs.liveChannelsAt = System.currentTimeMillis()
+    }
+
+    private fun StringBuilder.field(key: String, value: String, first: Boolean) {
+        if (!first) append(',')
+        append('"').append(key).append("\":\"").append(escapeJson(value)).append('"')
+    }
+
+    private fun escapeJson(value: String): String {
+        var needs = false
+        for (c in value) {
+            if (c == '"' || c == '\\' || c < ' ') {
+                needs = true
+                break
+            }
+        }
+        if (!needs) return value
+        val sb = StringBuilder(value.length + 8)
+        for (c in value) {
+            when (c) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> if (c < ' ') sb.append(String.format("\\u%04x", c.code)) else sb.append(c)
+            }
+        }
+        return sb.toString()
     }
 
     fun logoFile(channel: LiveChannel): File? {
@@ -169,16 +216,20 @@ object LiveRepo {
 
     fun cachedLogoCount(channels: List<LiveChannel>): Int = channels.count { hasLogo(it) }
 
-    /** 后台补齐缺失台标，最多 400 个；完成后回调一次，便于页面刷新。 */
+    /** 后台补齐缺失台标：低内存机型只补一小部分、单线程慢慢来；站点连续失败就整段跳过。 */
     fun cacheLogos(
         channels: List<LiveChannel>,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
         onDone: () -> Unit = {}
     ) {
+        val lowRam = isLowRam()
+        val limit = if (lowRam) 120 else MAX_LOGOS
         val targets = channels
+            .asSequence()
             .filter { it.logo?.startsWith("http", true) == true }
             .filterNot { hasLogo(it) }
-            .take(MAX_LOGOS)
+            .take(limit)
+            .toList()
         if (targets.isEmpty()) {
             onDone()
             return
@@ -187,32 +238,51 @@ object LiveRepo {
         Async.io {
             val total = targets.size
             val done = AtomicInteger(0)
-            val pool = Executors.newFixedThreadPool(4)
+            val lastReported = AtomicInteger(0)
+            val hostFails = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
+            val pool = Executors.newFixedThreadPool(if (lowRam) 1 else 2)
             for (channel in targets) {
                 pool.execute {
-                    val ok = downloadLogo(channel)
+                    val host = hostOf(channel.logo)
+                    val failed = hostFails[host]?.get() ?: 0
+                    val ok = if (failed >= HOST_FAIL_LIMIT) false else downloadLogo(channel)
+                    if (!ok && failed < HOST_FAIL_LIMIT) {
+                        hostFails.computeIfAbsent(host) { AtomicInteger() }.incrementAndGet()
+                    }
                     val count = done.incrementAndGet()
-                    if (ok || count % 5 == 0 || count == total) {
-                        onProgress(count, total)
+                    if (count == total || count - lastReported.get() >= 8) {
+                        lastReported.set(count)
+                        runCatching { onProgress(count, total) }
                     }
                 }
             }
             pool.shutdown()
             runCatching { pool.awaitTermination(10, TimeUnit.MINUTES) }
-            onProgress(total, total)
-            onDone()
+            runCatching { onProgress(total, total) }
+            runCatching { onDone() }
         }
+    }
+
+    private fun isLowRam(): Boolean = runCatching {
+        val am = App.ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        am.isLowRamDevice
+    }.getOrDefault(false)
+
+    private fun hostOf(url: String?): String {
+        val raw = url?.trim().orEmpty()
+        return raw.removePrefix("https://").removePrefix("http://").substringBefore('/').lowercase()
     }
 
     private fun downloadLogo(channel: LiveChannel): Boolean {
         val source = channel.logo?.trim().orEmpty()
         val dest = logoFile(channel) ?: return false
         if (dest.exists() && dest.length() > 0) return true
+        if (inFlight.putIfAbsent(dest.name, true) != null) return false
         var temp: File? = null
         return try {
             val request = Request.Builder()
                 .url(source)
-                .header("User-Agent", "MyTV/1.0")
+                .header("User-Agent", "MyTV/1.3")
                 .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return false
@@ -238,6 +308,7 @@ object LiveRepo {
         } catch (t: Throwable) {
             false
         } finally {
+            inFlight.remove(dest.name)
             temp?.let { if (it.exists()) it.delete() }
         }
     }

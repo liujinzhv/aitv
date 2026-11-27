@@ -17,8 +17,14 @@ import kotlin.math.max
  */
 object ImageLoader {
 
-    private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
+    /** 位图缓存上限：低内存电视上 maxMemory/8 也可能吃掉三分之一堆，这里压到 1/12 并封顶 24MB */
+    private val cache = object : LruCache<String, Bitmap>(cacheSize()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+
+    private fun cacheSize(): Int {
+        val heap = Runtime.getRuntime().maxMemory()
+        return (heap / 12).coerceIn(6L * 1024 * 1024, 24L * 1024 * 1024).toInt()
     }
 
     fun loadFile(view: ImageView, path: String, reqW: Int, reqH: Int) {
@@ -96,6 +102,10 @@ object ImageLoader {
             }
             val bitmap = BitmapFactory.decodeFile(path, opts) ?: return null
             rotateByExif(bitmap, path)
+        } catch (oom: OutOfMemoryError) {
+            // 大图解码吃满堆时先清空缓存把内存让出来，避免整页崩掉
+            cache.evictAll()
+            null
         } catch (t: Throwable) {
             null
         }

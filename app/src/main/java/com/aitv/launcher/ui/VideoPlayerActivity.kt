@@ -44,6 +44,16 @@ class VideoPlayerActivity : Activity() {
     private var controllerKeySwallowed = false
     private var isVodClip = false
     private lateinit var httpClient: okhttp3.OkHttpClient
+
+    /** 探测专用短超时客户端：死源最多等 6 秒，不能像播放那样等 20 秒 */
+    private val probeClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
     private lateinit var dataSourceFactory: OkHttpDataSource.Factory
     private lateinit var playbackSourceFactory: DataSource.Factory
     private var resolvedUrl: String? = null
@@ -299,6 +309,13 @@ class VideoPlayerActivity : Activity() {
     private fun resolveNonDirect(url: String) {
         if (resolving) return
         resolving = true
+        // 同一个频道刚探过就直接复用结果，避免每次进来都再发一次请求
+        probeMemo[url]?.let { memo ->
+            resolveDone = true
+            resolving = false
+            applyProbe(url, memo.finalUrl, memo.contentType, memo.code)
+            return
+        }
         showLoading("正在解析直播地址…")
         Thread {
             var finalUrl = url
@@ -309,38 +326,49 @@ class VideoPlayerActivity : Activity() {
                     .url(url)
                     .header("User-Agent", BROWSER_UA)
                     .header("Accept", "*/*")
+                    // 只要响应头判断类型，别让源站真的推流下来
+                    .header("Range", "bytes=0-0")
                     .build()
-                httpClient.newCall(request).execute().use { response ->
+                probeClient.newCall(request).execute().use { response ->
                     code = response.code
                     finalUrl = response.request.url.toString()
                     contentType = response.header("Content-Type").orEmpty().lowercase()
                     Log.d("MyTVPlayer", "resolve code=$code type=$contentType final=$finalUrl")
+                }
+                if (code != 0 && code < 400) {
+                    probeMemo[url] = ProbeMemo(finalUrl, contentType, code)
                 }
             } catch (_: Throwable) {
             }
             runOnUiThread {
                 resolving = false
                 resolveDone = true
-                when {
-                    finalUrl.contains("error_account_pirated", true) -> {
-                        showStatus("这个频道源站返回「账号失效」占位视频\n按返回键换台")
-                    }
-                    code >= 400 && code != 0 -> {
-                        showStatus("直播源返回 HTTP $code，无法打开\n按返回键换台")
-                    }
-                    contentType.contains("flv") || finalUrl.substringBefore('?').endsWith(".flv") -> {
-                        resolvedUrl = finalUrl
-                        resolvedMime = MimeTypes.VIDEO_FLV
-                        applyReferer(finalUrl)
-                        startPlayback()
-                    }
-                    contentType.contains("mpegurl") || finalUrl.contains("m3u8", true) -> {
-                        resolvedUrl = finalUrl
-                        resolvedMime = MimeTypes.APPLICATION_M3U8
-                        startPlayback()
-                    }
-                    contentType.contains("mp4") || finalUrl.substringBefore('?').endsWith(".mp4") -> {
-                        resolvedUrl = finalUrl
+                applyProbe(url, finalUrl, contentType, code)
+            }
+        }.start()
+    }
+
+    private fun applyProbe(url: String, finalUrl: String, contentType: String, code: Int) {
+        when {
+            finalUrl.contains("error_account_pirated", true) -> {
+                showStatus("这个频道源站返回「账号失效」占位视频\n按返回键换台")
+            }
+            code >= 400 && code != 0 -> {
+                showStatus("直播源返回 HTTP $code，无法打开\n按返回键换台")
+            }
+            contentType.contains("flv") || finalUrl.substringBefore('?').endsWith(".flv") -> {
+                resolvedUrl = finalUrl
+                resolvedMime = MimeTypes.VIDEO_FLV
+                applyReferer(finalUrl)
+                startPlayback()
+            }
+            contentType.contains("mpegurl") || finalUrl.contains("m3u8", true) -> {
+                resolvedUrl = finalUrl
+                resolvedMime = MimeTypes.APPLICATION_M3U8
+                startPlayback()
+            }
+            contentType.contains("mp4") || finalUrl.substringBefore('?').endsWith(".mp4") -> {
+                resolvedUrl = finalUrl
                         resolvedMime = MimeTypes.VIDEO_MP4
                         isVodClip = true
                         startPlayback()
@@ -353,9 +381,7 @@ class VideoPlayerActivity : Activity() {
                         resolvedUrl = finalUrl
                         startPlayback()
                     }
-                }
-            }
-        }.start()
+        }
     }
 
     private fun applyReferer(url: String) {
@@ -550,6 +576,10 @@ class VideoPlayerActivity : Activity() {
             KeyEvent.KEYCODE_MEDIA_REWIND
         )
         private const val STABLE_PLAY_MS = 20_000L
+
+        /** 探测结果缓存：同一频道再次打开直接复用，少发一次请求 */
+        private data class ProbeMemo(val finalUrl: String, val contentType: String, val code: Int)
+        private val probeMemo = java.util.concurrent.ConcurrentHashMap<String, ProbeMemo>()
         private const val BROWSER_UA =
             "Mozilla/5.0 (Linux; Android 8.0.0; SmartTV) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
